@@ -1,0 +1,15 @@
+# Runtime database
+mandate_rescue.db
+mandate_rescue.db-journal
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+env/
+
+# OS / editor
+.DS_Store
+Thumbs.db
