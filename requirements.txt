@@ -1,1 +1,16 @@
 Flask==3.0.3
+
+# ML validation/research layer (backend/ml/). This model is ADDITIVE: it produces
+# its own validated recovery-likelihood prediction shown alongside the rule-based
+# score. It does NOT drive any agent/compliance/scoring decision.
+scikit-learn==1.9.0
+joblib==1.5.3
+pandas==3.0.5
+numpy==2.5.2
+
+# LLM integration (backend/llm_client.py) uses the standard-library urllib to call
+# the Groq / OpenAI-compatible chat-completions endpoint, so it needs NO extra pip
+# package. It only requires the GROQ_API_KEY environment variable to be set:
+#   PowerShell:  $env:GROQ_API_KEY = "gsk_..."
+# Optional overrides: LLM_MODEL, LLM_API_BASE, LLM_TIMEOUT.
+# Without a key, the app transparently falls back to the deterministic templates.
