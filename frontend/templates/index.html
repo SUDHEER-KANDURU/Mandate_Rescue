@@ -1,0 +1,265 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Mandate Rescue</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+</head>
+<body>
+  <header class="topbar page-header">
+    <div class="brand">
+      <span class="logo">MR</span>
+      <div>
+        <h1>Mandate Rescue</h1>
+        <p class="tagline">AI recovery for failed UPI Autopay &amp; e-mandate debits</p>
+      </div>
+    </div>
+    <div class="actions">
+      <button id="btn-reset" class="btn btn-ghost" title="Re-seed fresh data and clear the previous run">Reset demo</button>
+      <button id="btn-run" class="btn btn-primary primary">Run agent</button>
+      <a id="btn-export" class="btn btn-ghost" href="/api/export">Download summary</a>
+    </div>
+  </header>
+
+  <main class="container">
+    <div id="status-banner" class="banner hidden"></div>
+
+    <!-- Empty state shown before any data is seeded -->
+    <section id="empty-state" class="empty-state card hidden">
+      <div class="empty-icon">MR</div>
+      <h2>No data yet</h2>
+      <p>Seed 180 synthetic mandate failures, then watch the four-agent pipeline
+        recover them in real time.</p>
+      <ul class="feature-list" style="text-align:left; max-width:420px;">
+        <li>Diagnoses each failure and scores recoverability</li>
+        <li>Triages high-value cases first, RBI-compliant throughout</li>
+        <li>Generates the right nudge on the right channel</li>
+      </ul>
+      <button id="btn-seed-empty" class="btn btn-primary btn-lg" style="margin-top:16px;">Seed demo data</button>
+    </section>
+
+    <!-- Run-complete headline banner -->
+    <section id="run-complete" class="run-complete card hidden">
+      <div class="rc-head">
+        <span class="rc-badge">Run complete</span>
+        <button id="rc-dismiss" class="btn btn-ghost btn-sm">Dismiss</button>
+      </div>
+      <div class="rc-figures">
+        <div><span class="rc-num" id="rc-processed">—</span><span class="rc-lbl">processed</span></div>
+        <div><span class="rc-num accent-ok" id="rc-recovered">—</span><span class="rc-lbl">recovered</span></div>
+        <div><span class="rc-num accent-bad" id="rc-escalated">—</span><span class="rc-lbl">escalated</span></div>
+        <div><span class="rc-num" id="rc-recovery-rate">—</span><span class="rc-lbl">recovery rate</span></div>
+      </div>
+    </section>
+
+    <!-- Live pipeline visualization (populated during a run) -->
+    <section id="live-panel" class="card live-panel hidden">
+      <div class="card-head">
+        <h2>Live agent run</h2>
+        <span class="hint">Each case flows Diagnosis → Triage → Strategy → Communication.</span>
+      </div>
+      <div class="live-counters">
+        <div class="lc"><span class="lc-num" id="lc-processed">0</span><span class="lc-lbl">Processed</span></div>
+        <div class="lc"><span class="lc-num accent-ok" id="lc-recovered">0</span><span class="lc-lbl">Recovered</span></div>
+        <div class="lc"><span class="lc-num accent-bad" id="lc-escalated">0</span><span class="lc-lbl">Escalated</span></div>
+        <div class="lc lc-progress"><div class="lc-bar"><span id="lc-fill"></span></div><span class="lc-lbl lc-count" id="lc-count">0 / 0</span></div>
+      </div>
+      <!-- Four-agent pipeline: rounded nodes joined by thin lines, blue pulse travels left→right -->
+      <div class="pipeline" id="pipeline">
+        <div class="pnode" data-stage="diagnosis">
+          <div class="pnode-dot">1</div>
+          <div class="pnode-name">Diagnosis</div>
+          <div class="pnode-count" data-count="diagnosis">0</div>
+        </div>
+        <div class="pnode" data-stage="triage">
+          <div class="pnode-dot">2</div>
+          <div class="pnode-name">Triage</div>
+          <div class="pnode-count" data-count="triage">0</div>
+        </div>
+        <div class="pnode" data-stage="strategy">
+          <div class="pnode-dot">3</div>
+          <div class="pnode-name">Strategy</div>
+          <div class="pnode-count" data-count="strategy">0</div>
+        </div>
+        <div class="pnode" data-stage="communication">
+          <div class="pnode-dot">4</div>
+          <div class="pnode-name">Communication</div>
+          <div class="pnode-count" data-count="communication">0</div>
+        </div>
+      </div>
+      <div id="live-feed" class="live-feed"></div>
+    </section>
+
+    <!-- Natural-language query -->
+    <section class="card ask-card">
+      <div class="card-head">
+        <h2>Ask the data</h2>
+        <span class="hint">Type a question in plain English. The assistant turns it into a filter; results come from real rows.</span>
+      </div>
+      <div class="ask-input-row">
+        <input id="ask-input" class="ask-input" type="text"
+               placeholder="e.g. show me all non-compliant high-value cases" autocomplete="off">
+        <button id="ask-btn" class="btn btn-primary">Ask</button>
+      </div>
+      <div class="ask-chips" id="ask-chips">
+        <button class="chip" data-q="show me all non-compliant high-value cases">Non-compliant high-value</button>
+        <button class="chip" data-q="which customers are at high churn risk">High churn risk</button>
+        <button class="chip" data-q="show escalated EMI cases">Escalated EMI cases</button>
+        <button class="chip" data-q="cases over the mandate limit">Over mandate limit</button>
+      </div>
+      <div id="ask-result" class="ask-result hidden"></div>
+    </section>
+
+    <div id="dashboard">
+    <!-- KPI cards -->
+    <section class="kpi-row" id="kpi-row">
+      <div class="card kpi"><span class="kpi-label">Amount at risk</span><span class="kpi-value num" id="kpi-at-risk">—</span></div>
+      <div class="card kpi"><span class="kpi-label">Amount recovered</span><span class="kpi-value num accent" id="kpi-recovered">—</span></div>
+      <div class="card kpi"><span class="kpi-label">Recovery rate</span><span class="kpi-value num" id="kpi-recovery-rate">—</span></div>
+      <div class="card kpi"><span class="kpi-label">Escalation rate</span><span class="kpi-value num" id="kpi-escalation-rate">—</span></div>
+    </section>
+
+    <!-- ML Model evaluation: a real, trained-and-validated model shown transparently
+         alongside the rule-based system. This is a validation/research layer only. -->
+    <section id="ml-panel" class="card ml-panel hidden">
+      <div class="card-head">
+        <h2>ML Model &mdash; trained and validated on simulation outcomes</h2>
+        <span class="hint" id="ml-winner-hint"></span>
+      </div>
+      <p class="ml-note">
+        This model predicts each case's <b>recovery likelihood</b> from its features.
+        It is an additive validation/research layer: the numbers below come from a real
+        scikit-learn model evaluated on a held-out test set. <b>Actual agent decisions
+        (retry, escalation, RBI compliance) still use the deterministic rule-based
+        scoring and compliance logic</b> &mdash; this model does not drive them.
+      </p>
+      <div class="ml-metric-grid" id="ml-metric-grid"></div>
+      <div class="ml-lower">
+        <div class="ml-cm">
+          <div class="section-title">Confusion matrix &middot; held-out test set</div>
+          <table class="cm-table" id="ml-cm-table"></table>
+          <p class="muted ml-cm-cap" id="ml-cm-cap"></p>
+        </div>
+        <div class="ml-compare">
+          <div class="section-title">Model comparison &middot; by ROC-AUC</div>
+          <table class="cases-table ml-compare-table" id="ml-compare-table"></table>
+          <p class="muted ml-dataset-note" id="ml-dataset-note"></p>
+        </div>
+      </div>
+    </section>
+
+    <!-- Correctness audit: re-derives ground truth from the audit log and verifies the
+         app's own stated business rules hold for every case. Read-only, additive. -->
+    <section id="audit-panel" class="card audit-panel hidden">
+      <div class="card-head">
+        <h2>Correctness Audit</h2>
+        <span class="hint">Independently re-checks every case against the stated rules
+          &mdash; retry cap, RBI pre-debit gate, revoked-mandate handling, money totals,
+          and the baseline comparison.</span>
+      </div>
+      <div id="audit-summary" class="audit-summary"></div>
+      <div id="audit-checks" class="audit-checks"></div>
+    </section>
+
+    <!-- Two-column: cases table (left ~65%) | chart + cohort rail (right ~35%) -->
+    <div class="main-grid">
+      <div class="main-col">
+        <!-- Cases table -->
+        <section class="card">
+          <div class="card-head">
+            <h2>Cases <span class="muted num" id="cases-count"></span></h2>
+            <span class="hint">Sorted by recoverability score — the agent triages high-value cases first. Click a row for the full audit trail.</span>
+          </div>
+          <div class="table-wrap">
+            <table class="cases-table">
+              <thead>
+                <tr>
+                  <th>Score</th><th title="Additive ML prediction — does not drive decisions">ML P(recover)</th>
+                  <th>Customer</th><th>Reason</th><th>Amount</th>
+                  <th>Status</th><th>Salary window</th><th>Compliance</th><th>Dunning</th><th>Health</th>
+                </tr>
+              </thead>
+              <tbody id="cases-tbody"></tbody>
+            </table>
+          </div>
+        </section>
+
+        <!-- Exceptions: first-class, never minimized (N2) -->
+        <section class="card exceptions">
+          <div class="card-head">
+            <h2>Exceptions <span class="muted num" id="exceptions-count"></span></h2>
+            <span class="hint">Cases that ended unrecovered. We surface these honestly, with the reason each one failed.</span>
+          </div>
+          <div class="table-wrap">
+            <table class="cases-table">
+              <thead>
+                <tr><th>Customer</th><th>Amount</th><th>Reason</th><th>Category</th><th>Status</th><th>Why unrecovered</th></tr>
+              </thead>
+              <tbody id="exceptions-tbody"></tbody>
+            </table>
+          </div>
+        </section>
+
+        <!-- Rejected webhooks: security check, spoofed events blocked at ingestion -->
+        <section class="card rejected" id="rejected-card">
+          <div class="card-head">
+            <h2>Rejected webhooks <span class="muted num" id="rejected-count"></span></h2>
+            <span class="hint">Events blocked at ingestion for failing HMAC-SHA256 signature verification — never entered the pipeline.</span>
+          </div>
+          <div class="table-wrap">
+            <table class="cases-table">
+              <thead>
+                <tr><th>Customer</th><th>Event</th><th>Amount</th><th>When</th><th>Why rejected</th></tr>
+              </thead>
+              <tbody id="rejected-tbody"></tbody>
+            </table>
+          </div>
+        </section>
+      </div>
+
+      <div class="right-rail">
+        <!-- Agent vs baseline -->
+        <section class="card">
+          <h2>Agent vs baseline recovery</h2>
+          <p class="card-sub">What our agent recovered versus a naive "retry everyone once" approach.</p>
+          <canvas id="baseline-chart" height="200"></canvas>
+          <p class="uplift" id="uplift-note"></p>
+        </section>
+
+        <!-- Cohort view -->
+        <section class="card">
+          <h2>Recovery by cohort</h2>
+          <p class="card-sub">Not just "did it work" — for whom does it work.</p>
+          <div class="cohort-tabs">
+            <button class="tab active" data-cohort="tenure">By tenure</button>
+            <button class="tab" data-cohort="category">By category</button>
+          </div>
+          <div id="cohort-body" class="cohort-body"></div>
+        </section>
+      </div>
+    </div>
+    </div><!-- /#dashboard -->
+  </main>
+
+  <!-- Case detail drawer -->
+  <div id="drawer-overlay" class="drawer-overlay hidden"></div>
+  <aside id="drawer" class="drawer hidden">
+    <div class="drawer-head">
+      <h2 id="drawer-title">Case detail</h2>
+      <button id="drawer-close" class="btn btn-ghost">Close</button>
+    </div>
+    <div id="drawer-body" class="drawer-body"></div>
+  </aside>
+
+  <footer class="footer">
+    <span>Mandate Rescue — every number on this page traces to a logged audit event.</span>
+  </footer>
+
+  <script src="{{ url_for('static', filename='app.js') }}"></script>
+</body>
+</html>
