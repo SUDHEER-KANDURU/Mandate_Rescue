@@ -1,0 +1,105 @@
+{
+  "best_model": "LogisticRegression",
+  "dataset": {
+    "source": "Bootstrapped from repeated runs of the 180-case synthetic simulation with distinct seeds. Not unique real customers; label-consistent outcomes from the rule-based recovery pipeline. Additive validation layer only \u2014 does not drive agent decisions.",
+    "total_rows": 1770,
+    "positive_rate": 0.774,
+    "train_size": 1416,
+    "test_size": 354,
+    "test_split_fraction": 0.2,
+    "random_state": 42
+  },
+  "features": {
+    "numeric": [
+      "past_payment_success_rate",
+      "customer_tenure_months",
+      "past_retry_count",
+      "amount",
+      "mandate_limit"
+    ],
+    "categorical": [
+      "failure_reason",
+      "merchant_category"
+    ]
+  },
+  "models": {
+    "LogisticRegression": {
+      "precision": 0.9013,
+      "recall": 1.0,
+      "f1": 0.9481,
+      "roc_auc": 0.8964,
+      "confusion_matrix": {
+        "true_negatives": 50,
+        "false_positives": 30,
+        "false_negatives": 0,
+        "true_positives": 274,
+        "matrix": [
+          [
+            50,
+            30
+          ],
+          [
+            0,
+            274
+          ]
+        ],
+        "labels": [
+          "not_recovered (0)",
+          "recovered (1)"
+        ]
+      }
+    },
+    "GradientBoostingClassifier": {
+      "precision": 0.901,
+      "recall": 0.9964,
+      "f1": 0.9463,
+      "roc_auc": 0.8856,
+      "confusion_matrix": {
+        "true_negatives": 50,
+        "false_positives": 30,
+        "false_negatives": 1,
+        "true_positives": 273,
+        "matrix": [
+          [
+            50,
+            30
+          ],
+          [
+            1,
+            273
+          ]
+        ],
+        "labels": [
+          "not_recovered (0)",
+          "recovered (1)"
+        ]
+      }
+    }
+  },
+  "winner_metrics": {
+    "precision": 0.9013,
+    "recall": 1.0,
+    "f1": 0.9481,
+    "roc_auc": 0.8964,
+    "confusion_matrix": {
+      "true_negatives": 50,
+      "false_positives": 30,
+      "false_negatives": 0,
+      "true_positives": 274,
+      "matrix": [
+        [
+          50,
+          30
+        ],
+        [
+          0,
+          274
+        ]
+      ],
+      "labels": [
+        "not_recovered (0)",
+        "recovered (1)"
+      ]
+    }
+  }
+}
