@@ -16,3 +16,12 @@ env/
 # OS / editor
 .DS_Store
 Thumbs.db
+
+# Test/tooling artifacts
+.pytest_cache/
+*.egg-info/
+scripts/dev/*.jpg
+
+# Docker
+*.db-shm
+*.db-wal
