@@ -70,11 +70,28 @@ def _mandate_limit(rng, amount):
     return 5000 if amount <= 5000 else round(amount + rng.uniform(1000, 5000), 2)
 
 
-def build_records(rng):
-    """Return a list of 180 mandate_failures record dicts."""
-    reasons = []
-    for reason, count in REASON_COUNTS.items():
-        reasons.extend([reason] * count)
+def build_records(rng, total=TOTAL):
+    """Return a list of mandate_failures record dicts.
+
+    `total` defaults to TOTAL (180) so existing callers are unchanged. When a larger
+    count is requested (used by the chaos/volume test), the failure-reason mix keeps
+    the same proportions as the canonical 45/20/20/15 split so the larger batch is
+    realistic. customer_ids stay unique (CUST{1000+i}).
+    """
+    if total == TOTAL:
+        reasons = []
+        for reason, count in REASON_COUNTS.items():
+            reasons.extend([reason] * count)
+    else:
+        # Scale the canonical proportions to the requested total.
+        reasons = []
+        proportions = {r: c / TOTAL for r, c in REASON_COUNTS.items()}
+        for reason, frac in proportions.items():
+            reasons.extend([reason] * int(round(frac * total)))
+        # Correct any rounding drift so len(reasons) == total exactly.
+        while len(reasons) < total:
+            reasons.append("insufficient_funds")
+        reasons = reasons[:total]
     rng.shuffle(reasons)
 
     today = datetime.now()
