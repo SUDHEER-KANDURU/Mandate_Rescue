@@ -4,17 +4,18 @@
    ========================================================================= */
 
 :root {
-  --bg: #F7FDFA;
+  /* Razorpay-inspired: confident BLUE is the single primary color.
+     Teal is reserved strictly for genuine success/compliant/passed states. */
+  --bg: #FBFCFF;
   --surface: #FFFFFF;
-  --border: #DCEFE4;
-  --text-primary: #0E2A1E;
-  --text-secondary: #4A6B5B;
-  /* Accent shifted from blue to a green-tinted palette (kept var names for zero-churn). */
-  --accent-blue: #0E9F6E;
-  --accent-blue-hover: #087A54;
-  --accent-blue-soft: #E3F7EE;
-  --accent-teal: #00A972;
-  --accent-teal-soft: #DFF5E9;
+  --border: #E4E7EC;
+  --text-primary: #16192C;
+  --text-secondary: #5C6270;
+  --accent-blue: #3E5FF5;        /* THE primary color: primary buttons, active tab/chip, links, primary numbers */
+  --accent-blue-hover: #2E4AD1;
+  --accent-blue-soft: #EEF1FF;   /* light blue backgrounds for active states */
+  --accent-teal: #00A972;        /* ONLY for "Recovered"/"RBI-compliant"/"All checks passed" success states */
+  --accent-teal-soft: #E3F7EE;
   --danger: #E5484D;
   --danger-soft: #FDECED;
   --warning: #F5A623;
@@ -24,9 +25,9 @@
   /* Layout tokens (retained; not color/font) */
   --warning-soft: #FDF3E3;
   --radius-card: 12px;
-  --radius-ctl: 9px;
-  --shadow-card: 0 1px 3px rgba(14, 42, 30, 0.06);
-  --row-hover: #F1FAF5;
+  --radius-ctl: 8px;             /* buttons: moderate rounding, not a pill */
+  --shadow-card: 0 1px 3px rgba(16, 25, 64, 0.06);
+  --row-hover: #F4F6FB;
 
   /* Aliases so existing rules that reference --font-sans keep working */
   --font-sans: var(--font-body);
@@ -46,8 +47,8 @@ body {
   /* Decorative, soft blurred radial washes in the page corners only.
      Fixed so they never sit behind readable body text as it scrolls. */
   background-image:
-    radial-gradient(760px 520px at 100% -6%, #DBF3E7 0%, transparent 60%),
-    radial-gradient(680px 480px at -6% 108%, #DBF3E7 0%, transparent 60%);
+    radial-gradient(760px 520px at 100% -6%, #E7ECFF 0%, transparent 60%),
+    radial-gradient(680px 480px at -6% 108%, #E7ECFF 0%, transparent 60%);
   background-attachment: fixed;
   background-repeat: no-repeat;
 }
@@ -110,7 +111,7 @@ h2 { font-size: 1.02rem; }
 .banner {
   padding: 12px 16px; border-radius: 10px; margin-bottom: 24px; font-size: 0.9rem;
   background: var(--accent-blue-soft); color: var(--accent-blue-hover);
-  border: 1px solid #BFE8D3;
+  border: 1px solid #C7D0FF;
 }
 .banner.err { background: var(--danger-soft); color: var(--danger); border-color: rgba(229,72,77,0.28); }
 
@@ -140,11 +141,11 @@ h2 { font-size: 1.02rem; }
 /* --- Cohort view --------------------------------------------------------- */
 .cohort-tabs { display: flex; gap: 8px; margin-bottom: 16px; }
 .tab {
-  border: 1px solid var(--border); background: var(--surface); border-radius: 999px; padding: 5px 14px;
+  border: 1px solid var(--border); background: var(--surface); border-radius: 8px; padding: 5px 14px;
   font-family: var(--font-sans); font-size: 0.82rem; font-weight: 600; color: var(--text-secondary); cursor: pointer;
   transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
 }
-.tab.active { background: var(--accent-blue-soft); color: var(--accent-blue-hover); border-color: #BFE8D3; }
+.tab.active { background: var(--accent-blue-soft); color: var(--accent-blue); border-color: #C7D0FF; }
 
 .cohort-row { margin-bottom: 14px; }
 .cohort-row .cohort-top { display: flex; justify-content: space-between; font-size: 0.86rem; margin-bottom: 6px; color: var(--text-primary); }
@@ -166,10 +167,12 @@ h2 { font-size: 1.02rem; }
 .exceptions tbody tr, .rejected tbody tr { cursor: default; }
 
 /* Score pill (mono) */
+/* Score pill: neutral gray by default; teal ONLY when the score is genuinely
+   high/good, so color carries real meaning (fix #8). */
 .score-pill {
   display: inline-grid; place-items: center; min-width: 40px; height: 26px; padding: 0 8px;
   border-radius: 8px; font-family: var(--font-mono); font-weight: 700; font-size: 0.82rem;
-  background: var(--accent-blue-soft); color: var(--accent-blue-hover);
+  background: #F2F4F7; color: var(--text-secondary);
 }
 .score-pill.low { background: #F2F4F7; color: var(--text-secondary); }
 .score-pill.high { background: var(--accent-teal-soft); color: var(--accent-teal); }
@@ -193,6 +196,14 @@ h2 { font-size: 1.02rem; }
 .badge.health-healthy { background: var(--accent-teal-soft); color: var(--accent-teal); }
 .badge.health-at-risk { background: var(--warning-soft); color: #B4740E; }
 .badge.health-high-risk { background: var(--danger-soft); color: var(--danger); }
+
+/* Real Razorpay-sourced case badge (vs. synthetic seeded demo data). */
+.badge.razorpay-live {
+  background: linear-gradient(90deg, #0E4FE0, #3E5FF5);
+  color: #fff;
+  font-size: 0.66rem;
+  padding: 2px 8px;
+}
 
 /* Dunning: 3 connected dots, filled up to current stage */
 .dunning { display: inline-flex; gap: 5px; align-items: center; }
@@ -259,6 +270,13 @@ h2 { font-size: 1.02rem; }
   border-radius: 50%; background: var(--accent-teal-soft); color: var(--accent-teal); font-weight: 700; font-size: 0.8rem;
 }
 
+/* --- Real Razorpay webhook intake card ------------------------------------ */
+.razorpay-live-card {
+  border: 1px solid #C7D2FE;
+  background: linear-gradient(135deg, rgba(62, 95, 245, 0.06), rgba(14, 79, 224, 0.03));
+}
+.razorpay-live-card .rc-figures { grid-template-columns: max-content; }
+
 /* --- Run-complete banner ------------------------------------------------- */
 .run-complete { border: 1px solid #CFEBDF; }
 .rc-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; }
@@ -272,7 +290,7 @@ h2 { font-size: 1.02rem; }
    Signature: four-agent pipeline visualization
    Diagnosis → Triage → Strategy → Communication
    ========================================================================= */
-.live-panel { border-color: #BFE8D3; }
+.live-panel { border-color: var(--border); }
 .live-counters { display: grid; grid-template-columns: repeat(3, auto) 1fr; gap: 24px; align-items: center; margin-bottom: 24px; }
 .lc { display: flex; flex-direction: column; gap: 2px; }
 .lc-num { font-family: var(--font-mono); font-size: 1.5rem; font-weight: 700; color: var(--text-primary); }
@@ -309,8 +327,8 @@ h2 { font-size: 1.02rem; }
   border-color: var(--accent-blue); background: var(--accent-blue); color: #fff;
 }
 @keyframes nodePulse {
-  0%, 100% { box-shadow: 0 0 0 0 rgba(14, 159, 110, 0.35); }
-  50%      { box-shadow: 0 0 0 8px rgba(14, 159, 110, 0); }
+  0%, 100% { box-shadow: 0 0 0 0 rgba(62, 95, 245, 0.35); }
+  50%      { box-shadow: 0 0 0 8px rgba(62, 95, 245, 0); }
 }
 .pnode-name { font-size: 0.82rem; font-weight: 600; color: var(--text-primary); text-align: center; }
 .pnode-count { font-family: var(--font-mono); font-size: 0.76rem; color: var(--text-secondary); }
@@ -342,14 +360,16 @@ h2 { font-size: 1.02rem; }
   transition: border-color 0.15s ease, box-shadow 0.15s ease;
 }
 .ask-input::placeholder { color: #98A0AE; }
-.ask-input:focus { outline: none; border-color: var(--accent-blue); box-shadow: 0 0 0 2px rgba(14, 159, 110, 0.28); }
+.ask-input:focus { outline: none; border-color: var(--accent-blue); box-shadow: 0 0 0 2px rgba(62, 95, 245, 0.22); }
 .ask-chips { display: flex; gap: 8px; flex-wrap: wrap; }
 .chip {
-  border: 1px solid var(--border); background: var(--surface); border-radius: 999px; padding: 6px 14px;
-  font-family: var(--font-sans); font-size: 0.82rem; font-weight: 600; color: var(--accent-blue-hover);
-  cursor: pointer; transition: background 0.15s ease, border-color 0.15s ease;
+  border: 1px solid var(--border); background: var(--surface); border-radius: 8px; padding: 6px 14px;
+  font-family: var(--font-sans); font-size: 0.82rem; font-weight: 600; color: var(--text-secondary);
+  cursor: pointer; transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease;
 }
-.chip:hover { background: var(--accent-blue-soft); border-color: #BFE8D3; }
+.chip:hover { background: var(--accent-blue-soft); border-color: #C7D0FF; color: var(--accent-blue); }
+/* Selected example-query chip: blue-soft background, blue text (fix #2). */
+.chip.active { background: var(--accent-blue-soft); color: var(--accent-blue); border-color: #C7D0FF; }
 
 .ask-result { margin-top: 18px; border-top: 1px solid var(--border); padding-top: 18px; }
 .ask-loading { display: flex; align-items: center; gap: 12px; color: var(--text-secondary); font-size: 0.9rem; padding: 10px 0; }
@@ -449,8 +469,13 @@ h1, h2, h3, .page-title, .card-title {
   box-shadow: 0 1px 3px rgba(16,25,64,0.06) !important;
 }
 
-/* Soft blue gradient wash in the top-right corner behind the header only. */
-.page-header { position: relative; overflow: hidden; }
+/* Soft blue gradient wash in the top-right corner behind the header only.
+   NOTE: do NOT set position here — the header is .topbar.page-header and must keep
+   its `position: sticky` (declared above). A `position: relative` here silently
+   overrode the sticky positioning (equal specificity, later source order), which is
+   what made the header scroll away with the page. `overflow: hidden` only clips the
+   decorative ::before gradient and is compatible with a sticky element. */
+.page-header { overflow: hidden; }
 .page-header > * { position: relative; z-index: 1; }
 .page-header::before {
   content: "";
@@ -477,21 +502,30 @@ table th, .cases-table th {
    ML Model evaluation panel + ML probability pill (additive validation layer).
    Presentation only; reads real numbers from /api/ml-metrics.
    ========================================================================= */
-.ml-panel { border: 1px solid #BFE8D3; }
+.ml-panel { border: 1px solid var(--border); }
 .ml-note {
   margin: 0 0 18px; font-size: 0.88rem; color: var(--text-secondary);
-  background: var(--accent-blue-soft); border: 1px solid #BFE8D3; border-radius: 10px;
+  background: var(--accent-blue-soft); border: 1px solid #C7D0FF; border-radius: 10px;
   padding: 12px 16px; max-width: 100%;
 }
 .ml-note b { color: var(--text-primary); }
 
-.ml-metric-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; margin-bottom: 24px; }
+.ml-metric-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; margin-bottom: 12px; }
+
+/* Caveat callout beneath the metric grid (e.g. explaining a near-perfect recall). */
+.ml-caveat {
+  margin: 0 0 20px; font-size: 0.82rem; line-height: 1.55; color: var(--text-secondary);
+  background: #FFF7E6; border: 1px solid #F2D492; border-radius: 10px;
+  padding: 10px 14px;
+}
 .ml-metric {
   display: flex; flex-direction: column; gap: 4px; padding: 16px 18px;
   border: 1px solid var(--border); border-radius: var(--radius-card); background: var(--bg);
 }
 .ml-metric-label { color: var(--text-secondary); font-size: 0.74rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; }
-.ml-metric-value { font-family: var(--font-mono); font-size: 1.7rem; font-weight: 700; color: var(--accent-blue); letter-spacing: -0.02em; }
+/* ML metrics (ROC-AUC, Precision, Recall, F1) are neutral/informational, not
+   success states — neutral primary text in mono, not teal or blue (fix #5). */
+.ml-metric-value { font-family: var(--font-mono); font-size: 1.7rem; font-weight: 700; color: var(--text-primary); letter-spacing: -0.02em; }
 .ml-metric-sub { color: var(--text-secondary); font-size: 0.74rem; }
 
 .ml-lower { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.3fr); gap: 28px; align-items: start; }
@@ -517,7 +551,7 @@ table th, .cases-table th {
 .ml-prob-pill {
   display: inline-grid; place-items: center; min-width: 44px; height: 26px; padding: 0 8px;
   border-radius: 8px; font-family: var(--font-mono); font-weight: 700; font-size: 0.82rem;
-  background: var(--accent-blue-soft); color: var(--accent-blue-hover);
+  background: #F2F4F7; color: var(--text-secondary);
 }
 .ml-prob-pill.high { background: var(--accent-teal-soft); color: var(--accent-teal); }
 .ml-prob-pill.low { background: #F2F4F7; color: var(--text-secondary); }
@@ -532,13 +566,13 @@ table th, .cases-table th {
    Correctness Audit panel (additive, read-only). Green = all passed,
    red = specific rule violations with case IDs.
    ========================================================================= */
-.audit-panel { border: 1px solid #BFE8D3; }
+.audit-panel { border: 1px solid var(--border); }
 
 .audit-banner {
   display: flex; align-items: center; gap: 12px; padding: 14px 18px; border-radius: 10px;
   font-weight: 700; font-size: 1rem; margin-bottom: 18px;
 }
-.audit-banner.ok { background: var(--accent-teal-soft); color: var(--accent-teal); border: 1px solid #BFE8D3; }
+.audit-banner.ok { background: var(--accent-teal-soft); color: var(--accent-teal); border: 1px solid #BFE3D1; }
 .audit-banner.bad { background: var(--danger-soft); color: var(--danger); border: 1px solid rgba(229,72,77,0.28); }
 .audit-icon {
   display: grid; place-items: center; width: 26px; height: 26px; border-radius: 50%;
@@ -567,3 +601,595 @@ table th, .cases-table th {
   display: inline-block; background: var(--surface); border: 1px solid rgba(229,72,77,0.28);
   color: var(--danger); border-radius: 6px; padding: 1px 7px; font-size: 0.78rem; font-weight: 700; margin-right: 4px;
 }
+
+/* =========================================================================
+   Policy Experimentation Sandbox
+   Analysis-only tool: explores policy sensitivity via repeated simulation.
+   Visually distinguished (dashed accent border) so it never reads as a live
+   control that reconfigures the real pipeline.
+   ========================================================================= */
+.sandbox-panel {
+  border: 1px dashed var(--accent-blue);
+  background: linear-gradient(0deg, var(--accent-blue-soft) 0%, var(--surface) 40%);
+}
+.sandbox-note {
+  margin: 0 0 16px;
+  font-size: 0.86rem;
+  color: var(--text-secondary);
+}
+.sandbox-grid {
+  display: grid;
+  grid-template-columns: minmax(280px, 360px) 1fr;
+  gap: 24px;
+}
+@media (max-width: 900px) {
+  .sandbox-grid { grid-template-columns: 1fr; }
+}
+
+.sandbox-controls { display: flex; flex-direction: column; gap: 18px; }
+.sb-field { display: flex; flex-direction: column; gap: 6px; }
+.sb-field label {
+  font-size: 0.85rem; font-weight: 600; color: var(--text-primary);
+  display: flex; align-items: center; gap: 8px;
+}
+.sb-val {
+  font-family: var(--font-mono); background: var(--accent-blue-soft);
+  color: var(--accent-blue); padding: 1px 8px; border-radius: 6px; font-size: 0.8rem;
+}
+.sb-sub { font-size: 0.76rem; color: var(--text-secondary); }
+.sb-sub.ok { color: var(--accent-teal); font-weight: 600; }
+.sb-sub.bad { color: var(--danger); font-weight: 600; }
+
+.sb-field input[type="range"] { width: 100%; accent-color: var(--accent-blue); }
+
+.sb-weights { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.sb-weight { display: flex; align-items: center; justify-content: space-between; gap: 8px;
+  background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-ctl);
+  padding: 6px 10px; }
+.sb-wlabel { font-size: 0.8rem; color: var(--text-secondary); }
+.sb-wnum {
+  width: 68px; font-family: var(--font-mono); text-align: right;
+  border: 1px solid var(--border); border-radius: 6px; padding: 4px 6px; font-size: 0.85rem;
+}
+.sb-wnum:focus { outline: none; border-color: var(--accent-blue); }
+
+.sb-toggle { display: inline-flex; border: 1px solid var(--border); border-radius: var(--radius-ctl);
+  overflow: hidden; width: fit-content; }
+.sb-toggle-btn {
+  border: none; background: var(--surface); color: var(--text-secondary);
+  padding: 7px 14px; font-size: 0.82rem; font-weight: 600; cursor: pointer;
+}
+.sb-toggle-btn.active { background: var(--accent-blue); color: #fff; }
+
+.sb-actions { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-top: 4px; }
+.sb-error {
+  color: var(--danger); background: var(--danger-soft); border: 1px solid var(--danger);
+  border-radius: var(--radius-ctl); padding: 8px 12px; font-size: 0.82rem;
+}
+
+/* Results column */
+.sb-placeholder {
+  color: var(--text-secondary); font-size: 0.88rem; padding: 24px;
+  border: 1px dashed var(--border); border-radius: var(--radius-card);
+  background: var(--surface); text-align: center;
+}
+.sb-results { display: flex; flex-direction: column; gap: 14px; }
+.sb-results-head { font-size: 0.78rem; color: var(--text-secondary); text-transform: uppercase;
+  letter-spacing: 0.04em; font-weight: 600; }
+.sb-result-card {
+  border: 1px solid var(--border); border-radius: var(--radius-card);
+  padding: 14px 16px; background: var(--surface);
+}
+.sb-result-card.muted-card { background: var(--bg); }
+.sb-result-card.sb-compare { border-color: var(--accent-blue); background: var(--accent-blue-soft); }
+.sb-card-title { font-weight: 700; color: var(--text-primary); font-size: 0.9rem; margin-bottom: 10px; }
+
+.sb-metric { margin-bottom: 12px; }
+.sb-metric:last-child { margin-bottom: 0; }
+.sb-metric-label { font-size: 0.8rem; color: var(--text-secondary); }
+.sb-metric-value { font-family: var(--font-mono); font-size: 0.98rem; color: var(--text-primary);
+  font-weight: 600; margin: 1px 0 5px; }
+
+/* CI bar: a 0-100% track with a shaded confidence band and a mean marker. */
+.ci-bar { position: relative; height: 8px; border-radius: 5px; background: #EAEDF5; overflow: hidden; }
+.ci-band { position: absolute; top: 0; height: 100%; background: rgba(62, 95, 245, 0.35); }
+.ci-mean { position: absolute; top: -2px; width: 2px; height: 12px; background: var(--accent-blue); }
+
+/* Delta rows */
+.sb-delta { display: grid; grid-template-columns: 1fr auto; align-items: baseline;
+  gap: 6px 12px; padding: 7px 0; border-bottom: 1px solid rgba(228, 231, 236, 0.6); }
+.sb-delta:last-child { border-bottom: none; }
+.sb-delta-label { font-size: 0.85rem; color: var(--text-primary); font-weight: 600; }
+.sb-delta-value { font-family: var(--font-mono); font-weight: 700; text-align: right; }
+.sb-delta-value.good { color: var(--accent-teal); }
+.sb-delta-value.bad { color: var(--danger); }
+.sb-delta-value.neutral { color: var(--text-secondary); }
+.sb-delta-note { grid-column: 1 / -1; font-size: 0.74rem; color: var(--text-secondary); }
+.sb-footnote { font-size: 0.72rem; color: var(--text-secondary); font-style: italic; }
+
+/* =========================================================================
+   SHAP explainability (ML validation layer)
+   Global importance chart in the ML panel + per-case force-plot in the drawer.
+   Interpretation only — never drives agent decisions.
+   ========================================================================= */
+.ml-shap-importance { margin-top: 20px; padding-top: 16px; border-top: 1px solid var(--border); }
+.ml-shap-cap { margin: 2px 0 12px; font-size: 0.78rem; }
+
+/* Section tag reused in the drawer to flag the ML validation layer. */
+.section-tag {
+  margin-left: 8px; font-size: 0.68rem; font-weight: 600; text-transform: uppercase;
+  letter-spacing: 0.04em; color: var(--accent-blue); background: var(--accent-blue-soft);
+  padding: 2px 8px; border-radius: 10px; vertical-align: middle;
+}
+
+.shap-slot { margin-bottom: 8px; }
+.shap-explain {
+  border: 1px solid var(--border); border-radius: var(--radius-card);
+  padding: 14px 16px; background: var(--surface);
+}
+.shap-head { display: flex; align-items: baseline; justify-content: space-between; margin-bottom: 12px; }
+.shap-prob-label { font-size: 0.8rem; color: var(--text-secondary); }
+.shap-prob-value { font-size: 1.1rem; font-weight: 700; color: var(--text-primary); }
+
+.shap-bars { display: flex; flex-direction: column; gap: 9px; }
+.shap-row { display: grid; grid-template-columns: 150px 1fr 52px; align-items: center; gap: 10px; }
+.shap-label { display: flex; flex-direction: column; line-height: 1.2; }
+.shap-feat { font-size: 0.8rem; color: var(--text-primary); font-weight: 600; }
+.shap-val { font-size: 0.72rem; color: var(--text-secondary); font-family: var(--font-mono); }
+
+/* Track with a center zero-line; bars grow outward from the middle. */
+.shap-track { position: relative; height: 16px; background: #F1F3F9; border-radius: 4px; overflow: hidden; }
+.shap-bar { position: absolute; top: 0; height: 100%; }
+.shap-bar.pos { background: var(--accent-teal); border-radius: 0 4px 4px 0; }
+.shap-bar.neg { background: var(--danger); border-radius: 4px 0 0 4px; }
+.shap-zero { position: absolute; top: -1px; left: 50%; width: 1px; height: 18px;
+  background: var(--text-secondary); opacity: 0.5; }
+
+.shap-impact { font-family: var(--font-mono); font-size: 0.82rem; font-weight: 700; text-align: right; }
+.shap-impact.pos { color: var(--accent-teal); }
+.shap-impact.neg { color: var(--danger); }
+
+.shap-legend { display: flex; gap: 16px; margin-top: 12px; }
+.shap-legend-item { font-size: 0.72rem; font-weight: 600; }
+.shap-legend-item.pos { color: var(--accent-teal); }
+.shap-legend-item.neg { color: var(--danger); }
+.shap-note { margin-top: 10px; font-size: 0.72rem; color: var(--text-secondary); font-style: italic; }
+
+/* =========================================================================
+   PHASE 1 — App shell: persistent left sidebar + main content area.
+   Layout/navigation only. No color/token or functional changes to existing
+   components; each former stacked section is now a switchable "view".
+   ========================================================================= */
+
+/* The header stays full-width and sticky at the very top across all sections. */
+.topbar { z-index: 30; }
+
+/* Shell sits below the header: fixed-width sidebar + flexible content. */
+.app-shell {
+  display: grid;
+  grid-template-columns: 240px minmax(0, 1fr);
+  align-items: start;
+  max-width: 1480px;
+  margin: 0 auto;
+}
+
+/* --- Sidebar ------------------------------------------------------------- */
+.sidebar {
+  position: sticky;
+  top: 73px; /* height of the sticky header */
+  align-self: start;
+  height: calc(100vh - 73px);
+  padding: 20px 14px;
+  border-right: 1px solid var(--border);
+  background: rgba(255, 255, 255, 0.6);
+  overflow-y: auto;
+}
+.nav-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
+.nav-item {
+  width: 100%; display: flex; align-items: center; gap: 12px;
+  padding: 10px 14px; border: 1px solid transparent; border-radius: var(--radius-ctl);
+  background: transparent; color: var(--text-secondary);
+  font-family: var(--font-sans); font-size: 0.9rem; font-weight: 600; cursor: pointer;
+  text-align: left; transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+}
+.nav-item:hover { background: var(--row-hover); color: var(--text-primary); }
+.nav-item.active {
+  background: var(--accent-blue-soft); color: var(--accent-blue); border-color: #C7D0FF;
+}
+.nav-ico {
+  display: grid; place-items: center; width: 22px; height: 22px; flex: none;
+  font-size: 0.95rem; line-height: 1;
+}
+.nav-label { flex: 1; }
+
+/* --- Content area -------------------------------------------------------- */
+.content { padding: 32px 32px 72px; min-width: 0; }
+
+/* --- Views: only the active one is shown -------------------------------- */
+.view { display: none; }
+.view.active { display: block; animation: viewFade 0.18s ease; }
+@keyframes viewFade { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
+
+/* Per-view empty hints (when a section has nothing to show yet). */
+.view-empty {
+  border: 1px dashed var(--border); border-radius: var(--radius-card);
+  padding: 28px 24px; text-align: center; font-size: 0.9rem; background: var(--surface);
+}
+.view-empty code {
+  font-family: var(--font-mono); background: var(--bg); border: 1px solid var(--border);
+  border-radius: 6px; padding: 1px 7px; font-size: 0.82rem;
+}
+
+/* Reports action row */
+.reports-actions { margin-top: 8px; }
+
+/* =========================================================================
+   Chaos Suite view — triggers /api/chaos-test and renders the PASS/FAIL report.
+   Mirrors the correctness-audit visual language (teal pass, red fail).
+   ========================================================================= */
+.chaos-panel { border: 1px solid var(--border); }
+.chaos-note {
+  margin: 0 0 16px; font-size: 0.86rem; color: var(--text-secondary);
+  background: var(--accent-blue-soft); border: 1px solid #C7D0FF; border-radius: 10px;
+  padding: 12px 16px;
+}
+.chaos-note b { color: var(--text-primary); }
+.chaos-actions { margin-bottom: 16px; }
+.chaos-placeholder {
+  color: var(--text-secondary); font-size: 0.88rem; padding: 24px;
+  border: 1px dashed var(--border); border-radius: var(--radius-card);
+  background: var(--surface); text-align: center;
+}
+/* Loading state while the real /api/chaos-test round-trip is in flight. */
+.chaos-loading { display: inline-flex; align-items: center; gap: 12px;
+  color: var(--text-secondary); font-size: 0.9rem; }
+.chaos-results { display: flex; flex-direction: column; gap: 10px; }
+.chaos-overall {
+  display: flex; align-items: center; gap: 12px; padding: 14px 18px; border-radius: 10px;
+  font-weight: 700; font-size: 1rem; margin-bottom: 6px;
+}
+.chaos-overall.ok { background: var(--accent-teal-soft); color: var(--accent-teal); border: 1px solid #BFE3D1; }
+.chaos-overall.bad { background: var(--danger-soft); color: var(--danger); border: 1px solid rgba(229,72,77,0.28); }
+.chaos-overall .audit-icon { flex: none; }
+.chaos-overall.ok .audit-icon { background: var(--accent-teal); color: #fff; }
+.chaos-overall.bad .audit-icon { background: var(--danger); color: #fff; }
+.chaos-scenario { border: 1px solid var(--border); border-radius: 10px; padding: 12px 14px; }
+.chaos-scenario.ok { border-left: 4px solid var(--accent-teal); }
+.chaos-scenario.bad { border-left: 4px solid var(--danger); background: var(--danger-soft); }
+.chaos-scenario-head { display: flex; align-items: center; gap: 10px; }
+.chaos-scenario-icon { font-weight: 700; flex: none; }
+.chaos-scenario.ok .chaos-scenario-icon { color: var(--accent-teal); }
+.chaos-scenario.bad .chaos-scenario-icon { color: var(--danger); }
+.chaos-scenario-id {
+  font-family: var(--font-mono); font-size: 0.74rem; color: var(--text-secondary);
+  background: var(--bg); border: 1px solid var(--border); border-radius: 6px; padding: 1px 7px;
+}
+.chaos-scenario-desc { font-size: 0.88rem; color: var(--text-primary); }
+.chaos-failures { margin: 10px 0 0; padding: 0 0 0 4px; list-style: none; display: flex; flex-direction: column; gap: 6px; }
+.chaos-failures li { font-size: 0.83rem; color: var(--text-secondary); line-height: 1.5; }
+
+/* =========================================================================
+   Responsive: collapse the sidebar to an icon rail, then to a top strip.
+   ========================================================================= */
+@media (max-width: 1040px) {
+  .app-shell { grid-template-columns: 68px minmax(0, 1fr); }
+  .nav-label { display: none; }
+  .nav-item { justify-content: center; padding: 12px 0; }
+  .sidebar { padding: 16px 8px; }
+}
+@media (max-width: 720px) {
+  .app-shell { grid-template-columns: 1fr; }
+  .sidebar {
+    position: static; height: auto; width: 100%;
+    border-right: none; border-bottom: 1px solid var(--border);
+  }
+  .nav-list { flex-direction: row; flex-wrap: wrap; }
+  .nav-item { width: auto; padding: 10px 14px; }
+  .nav-label { display: inline; }
+  .content { padding: 24px 18px 60px; }
+}
+
+/* =========================================================================
+   PHASE 2 — Command palette (Cmd/Ctrl+K).
+   Centered modal in the existing visual language: white surface, --border
+   hairlines, --accent-blue highlight, 8px radius, same Inter/JetBrains stack.
+   Navigation/UI only — every action maps to an existing button or view.
+   ========================================================================= */
+.cmdk-overlay {
+  position: fixed; inset: 0; z-index: 60;
+  background: rgba(16, 25, 64, 0.32);
+  display: flex; align-items: flex-start; justify-content: center;
+  padding-top: 12vh;
+  animation: cmdkFade 0.12s ease;
+}
+@keyframes cmdkFade { from { opacity: 0; } to { opacity: 1; } }
+
+.cmdk {
+  width: min(620px, 92vw);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-ctl); /* 8px */
+  box-shadow: 0 20px 60px rgba(16, 25, 64, 0.24);
+  overflow: hidden;
+  font-family: var(--font-body);
+  animation: cmdkRise 0.14s ease;
+}
+@keyframes cmdkRise { from { opacity: 0; transform: translateY(-8px); } to { opacity: 1; transform: none; } }
+
+.cmdk-input-row {
+  display: flex; align-items: center; gap: 12px;
+  padding: 14px 16px; border-bottom: 1px solid var(--border);
+}
+.cmdk-hint-ico { color: var(--accent-blue); font-size: 1rem; flex: none; }
+.cmdk-input {
+  flex: 1; border: none; outline: none; background: transparent;
+  font-family: var(--font-body); font-size: 1rem; color: var(--text-primary);
+}
+.cmdk-input::placeholder { color: #98A0AE; }
+.cmdk-esc {
+  font-family: var(--font-mono); font-size: 0.7rem; color: var(--text-secondary);
+  background: var(--bg); border: 1px solid var(--border); border-radius: 6px;
+  padding: 2px 7px; flex: none;
+}
+
+.cmdk-list { list-style: none; margin: 0; padding: 6px; max-height: 46vh; overflow-y: auto; }
+
+/* Section-group label between result groups. */
+.cmdk-group {
+  padding: 10px 12px 4px; font-size: 0.68rem; font-weight: 700; text-transform: uppercase;
+  letter-spacing: 0.05em; color: var(--text-secondary);
+}
+
+.cmdk-item {
+  display: flex; align-items: center; gap: 12px;
+  padding: 10px 12px; border-radius: var(--radius-ctl); cursor: pointer;
+  color: var(--text-primary);
+}
+.cmdk-item .cmdk-ico {
+  display: grid; place-items: center; width: 26px; height: 26px; flex: none;
+  border-radius: 7px; background: var(--bg); border: 1px solid var(--border);
+  color: var(--text-secondary); font-size: 0.9rem;
+}
+.cmdk-item .cmdk-text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.cmdk-item .cmdk-title { font-size: 0.9rem; font-weight: 600; color: var(--text-primary);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.cmdk-item .cmdk-sub { font-size: 0.76rem; color: var(--text-secondary);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.cmdk-item .cmdk-title .cmdk-mono { font-family: var(--font-mono); }
+.cmdk-item .cmdk-kind {
+  font-size: 0.68rem; font-weight: 600; color: var(--text-secondary);
+  background: var(--bg); border: 1px solid var(--border); border-radius: 999px;
+  padding: 2px 9px; flex: none;
+}
+
+/* Highlighted (keyboard-selected or hovered) result: accent-blue soft fill. */
+.cmdk-item.active {
+  background: var(--accent-blue-soft); border: 1px solid #C7D0FF;
+}
+.cmdk-item.active .cmdk-ico { border-color: #C7D0FF; color: var(--accent-blue); background: var(--surface); }
+.cmdk-item.active .cmdk-title { color: var(--accent-blue-hover); }
+
+/* Matched-substring emphasis in titles. */
+.cmdk-item mark { background: transparent; color: var(--accent-blue); font-weight: 700; padding: 0; }
+
+.cmdk-empty { padding: 24px 16px; text-align: center; color: var(--text-secondary); font-size: 0.9rem; }
+
+.cmdk-foot {
+  display: flex; gap: 18px; align-items: center;
+  padding: 10px 16px; border-top: 1px solid var(--border);
+  font-size: 0.74rem; color: var(--text-secondary); background: var(--bg);
+}
+.cmdk-foot kbd {
+  font-family: var(--font-mono); font-size: 0.68rem; color: var(--text-secondary);
+  background: var(--surface); border: 1px solid var(--border); border-radius: 5px;
+  padding: 1px 6px; margin-right: 3px;
+}
+
+/* Command palette: transient "loading cases" state (shown instead of a premature
+   "No matches" while the /api/cases fetch backing case-search is still in flight). */
+.cmdk-loading {
+  display: flex; align-items: center; justify-content: center; gap: 10px;
+  padding: 24px 16px; color: var(--text-secondary); font-size: 0.9rem;
+}
+.cmdk-loading .spinner {
+  width: 16px; height: 16px; border: 2.5px solid var(--accent-blue-soft);
+  border-top-color: var(--accent-blue); border-radius: 50%; display: inline-block;
+  animation: spin 0.7s linear infinite;
+}
+
+/* =========================================================================
+   PHASE 3 — Saved views + starring.
+   Uses the existing token system: --accent-blue for active/interactive,
+   --warning (amber) for the filled star, --border hairlines, 8px radius.
+   Session-only state; no backend or business-logic changes.
+   ========================================================================= */
+
+/* All / Starred filter tabs above the cases table (reuses the .tab component). */
+.cases-tabs { display: flex; gap: 8px; margin-bottom: 14px; align-items: center; }
+.cases-tabs .tab { display: inline-flex; align-items: center; gap: 6px; }
+.cases-tabs .tab-star { color: var(--warning); font-size: 0.9rem; line-height: 1; }
+.cases-tabs .tab-count {
+  background: var(--bg); border: 1px solid var(--border); border-radius: 999px;
+  padding: 0 7px; font-size: 0.72rem; color: var(--text-secondary); min-width: 20px; text-align: center;
+}
+.cases-tabs .tab.active .tab-count {
+  background: var(--surface); border-color: #C7D0FF; color: var(--accent-blue);
+}
+
+/* Star column: keep it tight so it doesn't crowd the score column. */
+.cases-table th.th-star { width: 34px; text-align: center; color: var(--text-secondary); }
+.cases-table td.td-star { width: 34px; text-align: center; padding-left: 6px; padding-right: 6px; }
+.star-btn {
+  border: none; background: transparent; cursor: pointer; padding: 2px 4px;
+  font-size: 1.05rem; line-height: 1; color: #C4CAD6; /* hollow: muted neutral */
+  transition: color 0.12s ease, transform 0.08s ease;
+}
+.star-btn:hover { color: var(--warning); transform: scale(1.12); }
+.star-btn.on { color: var(--warning); } /* filled amber star */
+
+/* Empty-starred hint under the table. */
+.cases-empty-starred {
+  padding: 22px 16px; text-align: center; font-size: 0.88rem;
+  border: 1px dashed var(--border); border-radius: var(--radius-card);
+  background: var(--surface); margin-top: 4px;
+}
+
+/* Saved views row above the example-query chips. */
+.saved-views-row { display: flex; align-items: center; gap: 12px; margin-bottom: 10px; flex-wrap: wrap; }
+.saved-views-label {
+  font-size: 0.72rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em;
+  color: var(--text-secondary); flex: none;
+}
+.saved-views-chips { display: flex; gap: 8px; flex-wrap: wrap; }
+
+/* A saved-view chip: label (re-runs) + a small remove (×). Blue-tinted to read as
+   a saved/active object, distinct from the neutral example chips below it. */
+.saved-chip {
+  display: inline-flex; align-items: center; gap: 2px;
+  background: var(--accent-blue-soft); border: 1px solid #C7D0FF; border-radius: 8px;
+  overflow: hidden;
+}
+.saved-chip-label {
+  border: none; background: transparent; cursor: pointer;
+  font-family: var(--font-sans); font-size: 0.82rem; font-weight: 600; color: var(--accent-blue-hover);
+  padding: 6px 4px 6px 12px;
+}
+.saved-chip-label:hover { color: var(--accent-blue); }
+.saved-chip-remove {
+  border: none; background: transparent; cursor: pointer; color: var(--accent-blue-hover);
+  font-size: 1rem; line-height: 1; padding: 6px 10px 6px 4px; opacity: 0.6;
+}
+.saved-chip-remove:hover { opacity: 1; color: var(--danger); }
+
+/* "Save this view" button sits at the right end of the ask-summary row. */
+.ask-summary { display: flex; align-items: center; gap: 10px; }
+.ask-summary > span:nth-child(2) { flex: 1; } /* summary text takes remaining space */
+.ask-save-btn { flex: none; white-space: nowrap; }
+.ask-save-btn:disabled { opacity: 1; color: var(--accent-teal); border-color: #BFE3D1; background: var(--accent-teal-soft); }
+
+/* =========================================================================
+   PHASE 4 — Activity feed, keyboard-shortcut help overlay, and theme toggle.
+   Dark mode re-maps the SAME token system (inverted sensibly): dark surfaces,
+   light text, the existing blue as the primary and teal reserved for success.
+   No new palette — every component keeps referencing the same CSS variables.
+   ========================================================================= */
+
+/* Icon-only header buttons (theme + help). */
+.btn-icon {
+  padding: 9px 12px; min-width: 40px; justify-content: center; font-size: 1rem; line-height: 1;
+}
+#btn-help { font-weight: 700; }
+
+/* Smooth the swap between themes for surfaces/text (not layout). */
+body, .card, .panel, .sidebar, .topbar, .btn, .cases-table td, .cases-table th,
+.nav-item, .chip, .tab, .cmdk, .drawer, .msg-box {
+  transition: background-color 0.2s ease, color 0.2s ease, border-color 0.2s ease;
+}
+
+/* --- Dark theme: re-map the tokens ------------------------------------- */
+:root[data-theme="dark"] {
+  --bg: #0E1117;                 /* app background */
+  --surface: #171B23;            /* cards / panels */
+  --border: #2A3040;             /* hairlines */
+  --text-primary: #EAECF2;       /* headings / primary text (light) */
+  --text-secondary: #A0A7B8;     /* secondary text */
+
+  /* Blue stays the single primary; brightened slightly for contrast on dark. */
+  --accent-blue: #6C8BFF;
+  --accent-blue-hover: #8AA2FF;
+  --accent-blue-soft: #1E2740;   /* dark-tinted blue fill for active states */
+
+  /* Teal reserved for success; brightened + dark-tinted soft fill. */
+  --accent-teal: #2FD3A5;
+  --accent-teal-soft: #12352B;
+
+  --danger: #FF6B70;
+  --danger-soft: #3A1E22;
+  --warning: #F5B44A;
+  --warning-soft: #3A2E17;
+
+  --row-hover: #1E232E;
+  --shadow-card: 0 1px 3px rgba(0, 0, 0, 0.4);
+}
+
+/* Body wash + sticky header glass need explicit dark values (they used literal
+   whites/light gradients rather than tokens). */
+:root[data-theme="dark"] body {
+  background-image:
+    radial-gradient(760px 520px at 100% -6%, #172142 0%, transparent 60%),
+    radial-gradient(680px 480px at -6% 108%, #172142 0%, transparent 60%);
+}
+:root[data-theme="dark"] .topbar { background: rgba(23, 27, 35, 0.82); }
+:root[data-theme="dark"] .sidebar { background: rgba(23, 27, 35, 0.6); }
+
+/* A few components used literal light-gray fills; map them to tokens in dark. */
+:root[data-theme="dark"] .score-pill,
+:root[data-theme="dark"] .score-pill.low,
+:root[data-theme="dark"] .ml-prob-pill,
+:root[data-theme="dark"] .ml-prob-pill.low,
+:root[data-theme="dark"] .tag.reason,
+:root[data-theme="dark"] .badge.neutral,
+:root[data-theme="dark"] .cases-tabs .tab-count {
+  background: #232936; color: var(--text-secondary);
+}
+:root[data-theme="dark"] .cmdk-item .cmdk-ico,
+:root[data-theme="dark"] .cmdk-esc,
+:root[data-theme="dark"] .cmdk-foot kbd,
+:root[data-theme="dark"] .chaos-scenario-id {
+  background: #232936;
+}
+:root[data-theme="dark"] .star-btn { color: #4A5163; } /* hollow star on dark */
+:root[data-theme="dark"] .star-btn.on { color: var(--warning); }
+/* Confusion-matrix / bar fills reference tokens already; nothing else to patch. */
+
+/* --- Activity feed ------------------------------------------------------- */
+.activity-card .card-head { margin-bottom: 12px; }
+.activity-feed { display: flex; flex-direction: column; gap: 8px; max-height: 420px; overflow-y: auto; }
+.activity-empty {
+  border: 1px dashed var(--border); border-radius: 10px; padding: 18px 14px;
+  text-align: center; font-size: 0.86rem;
+}
+.activity-item {
+  display: flex; gap: 10px; align-items: flex-start;
+  padding: 9px 4px; border-bottom: 1px solid var(--border);
+}
+.activity-item:last-child { border-bottom: none; }
+.activity-dot {
+  flex: none; width: 8px; height: 8px; border-radius: 50%; margin-top: 6px;
+  background: var(--accent-blue);
+}
+.activity-item.ok .activity-dot { background: var(--accent-teal); }
+.activity-item.bad .activity-dot { background: var(--danger); }
+.activity-main { flex: 1; min-width: 0; }
+.activity-desc { font-size: 0.84rem; color: var(--text-primary); line-height: 1.4; }
+.activity-desc .activity-cid { font-family: var(--font-mono); font-weight: 600; }
+.activity-meta { font-size: 0.72rem; color: var(--text-secondary); margin-top: 2px; }
+.activity-meta .num { font-family: var(--font-mono); }
+
+/* --- Help overlay -------------------------------------------------------- */
+.help-overlay {
+  position: fixed; inset: 0; z-index: 60; background: rgba(16, 25, 64, 0.32);
+  display: flex; align-items: center; justify-content: center; padding: 24px;
+  animation: cmdkFade 0.12s ease;
+}
+:root[data-theme="dark"] .help-overlay { background: rgba(0, 0, 0, 0.55); }
+.help-modal {
+  width: min(460px, 94vw); background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--radius-card); box-shadow: 0 20px 60px rgba(16, 25, 64, 0.24);
+  overflow: hidden; animation: cmdkRise 0.14s ease;
+}
+.help-head {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 16px 20px; border-bottom: 1px solid var(--border);
+}
+.help-body { padding: 10px 20px; }
+.help-row { display: flex; align-items: center; gap: 16px; padding: 9px 0; border-bottom: 1px solid var(--border); }
+.help-row:last-child { border-bottom: none; }
+.help-keys { flex: none; display: inline-flex; align-items: center; gap: 4px; min-width: 120px; }
+.help-plus { color: var(--text-secondary); font-size: 0.78rem; }
+.help-keys kbd {
+  font-family: var(--font-mono); font-size: 0.74rem; color: var(--text-primary);
+  background: var(--bg); border: 1px solid var(--border); border-radius: 6px; padding: 3px 8px;
+}
+.help-desc { font-size: 0.88rem; color: var(--text-primary); }
+.help-foot { padding: 12px 20px; border-top: 1px solid var(--border); font-size: 0.76rem; }
