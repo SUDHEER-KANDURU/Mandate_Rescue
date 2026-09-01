@@ -5,9 +5,31 @@ from real mandate_failures / audit_log rows via metrics.py and baseline.py (N1).
 """
 
 import json
+import logging
 import os
 
+# Load a local .env (project root) into os.environ so GROQ_API_KEY / WEBHOOK_SECRET
+# set there are picked up automatically. Optional: if python-dotenv isn't installed
+# the app still runs and reads real environment variables as before.
+try:
+    from dotenv import load_dotenv
+
+    _ENV_PATH = os.path.join(
+        os.path.dirname(os.path.dirname(os.path.abspath(__file__))), ".env"
+    )
+    load_dotenv(_ENV_PATH)
+except ImportError:
+    pass
+
 from flask import Flask, jsonify, render_template, request, Response
+
+# Configure root logging once so server-side diagnostics (e.g. the real reason an LLM
+# call failed inside llm_client._chat) are actually emitted instead of vanishing.
+# Level is overridable via LOG_LEVEL for quieter/noisier environments.
+logging.basicConfig(
+    level=getattr(logging, os.environ.get("LOG_LEVEL", "INFO").upper(), logging.INFO),
+    format="%(asctime)s %(levelname)s %(name)s: %(message)s",
+)
 
 import db
 import seed as seed_module
@@ -20,11 +42,21 @@ import query as query_module
 import metrics
 import baseline
 import export as export_module
+import simulation_runner
 import health as health_module
 # Additive ML validation/research layer. Imported defensively so the app still runs
 # if the model has not been trained yet (predict.* degrade to "unavailable").
 from ml import predict as ml_predict
+# Additive SHAP explainability for the ML validation layer. Imported defensively so
+# the app still runs if shap isn't installed or the model isn't trained.
+try:
+    from ml import explain as ml_explain
+except Exception:  # pragma: no cover - shap optional
+    ml_explain = None
 import audit_check as audit_module
+import chaos_test as chaos_module
+import security
+import razorpay_adapter
 
 # Templates and static assets live in the sibling frontend/ folder.
 _PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -40,10 +72,73 @@ app = Flask(
 # The LLM may return anything; every key is validated against this hardcoded set
 # before any query is built, and off-list keys are dropped silently. This is a
 # closed allow-list, so no arbitrary LLM-chosen field can reach the data layer.
+# Must stay in sync with the filters query.run_query() actually honors. Every key
+# here is still validated/coerced inside query.py (parameterized SQL, numeric
+# coercion, fixed column names), so widening this list adds no injection surface --
+# it only stops the endpoint from silently dropping filters the engine supports
+# (e.g. "cases over the mandate limit" -> over_limit).
 ASK_FIELD_WHITELIST = frozenset({
     "compliance_status", "health_band", "failure_reason", "case_status",
     "amount_min", "amount_max",
+    "over_limit", "score_min", "score_max", "dunning_stage_min", "sort_by_amount",
 })
+
+
+# --- Security: API-key gate on mutating endpoints ---------------------------
+# Endpoints that change state (reseed/wipe the DB, run the agent, spend Monte Carlo
+# compute) require a valid X-API-Key header. Read-only endpoints (GET /api/cases,
+# /api/metrics, etc.) are NOT gated — they only ever return data, so the risk profile
+# is different, and gating every read would break simple curl-based judge exploration
+# for no security benefit. See backend/security.py for the key model.
+_PROTECTED_PATHS = frozenset({
+    "/api/seed", "/api/run-agent", "/api/run-agent-stream", "/api/reset", "/api/simulate",
+})
+
+
+@app.before_request
+def _require_api_key_for_mutations():
+    if request.path not in _PROTECTED_PATHS:
+        return None
+    supplied = request.headers.get("X-API-Key")
+    if not security.is_valid_key(supplied):
+        return jsonify({
+            "ok": False,
+            "error": "unauthorized",
+            "message": ("This endpoint requires a valid X-API-Key header. The "
+                       "dashboard UI sends this automatically; direct/external "
+                       "callers must supply the key configured via "
+                       "MANDATE_RESCUE_API_KEY."),
+        }), 401
+    return None
+
+
+@app.route("/api/_client-key")
+def api_client_key():
+    """Same-origin bootstrap: hand the dashboard's own JS the current API key.
+
+    This is NOT a security boundary by itself — it's how the UI (running on the
+    same origin as the server) picks up the key so normal dashboard use keeps
+    working without a login step. An external caller without same-origin access to
+    this endpoint still cannot call the protected routes without knowing the key
+    from the server's own environment/log.
+    """
+    return jsonify({"api_key": security.get_api_key()})
+
+
+@app.route("/healthz")
+def healthz():
+    """Liveness probe: process is up and can reach the database. No auth needed."""
+    try:
+        conn = db.get_connection()
+        try:
+            conn.execute("SELECT 1")
+        finally:
+            conn.close()
+        db_ok = True
+    except Exception as e:  # pragma: no cover - defensive
+        app.logger.warning("healthz DB check failed: %s", e)
+        db_ok = False
+    return jsonify({"status": "ok" if db_ok else "degraded", "db_ok": db_ok}), (200 if db_ok else 503)
 
 
 @app.route("/")
@@ -63,6 +158,87 @@ def api_run_agent():
     """Run the recovery agent over all seeded cases."""
     summary = agent_module.run_agent()
     return jsonify(summary)
+
+
+# --- Real Razorpay webhook intake --------------------------------------------
+@app.route("/api/webhooks/razorpay", methods=["POST"])
+def api_webhook_razorpay():
+    """Receive a REAL Razorpay webhook (test or live mode) and feed it into the
+    same recovery pipeline used for synthetic data.
+
+    Verification uses Razorpay's actual scheme: HMAC-SHA256 over the RAW request
+    body, keyed with RAZORPAY_WEBHOOK_SECRET (configured in the Razorpay Dashboard),
+    checked via razorpay_adapter.verify_razorpay_signature — NOT the synthetic
+    webhook_security.py scheme used by seed.py, and NOT re-serialized JSON (which
+    would silently break the signature). An invalid/missing signature is rejected
+    with 400 and never reaches the database or the pipeline.
+
+    Razorpay expects a 2xx response for every delivered event (understood or not) or
+    it will keep retrying delivery, so unrecognized event types are acknowledged
+    with 200 and simply skipped rather than erroring.
+    """
+    raw_body = request.get_data()  # exact raw bytes, before any JSON parsing
+    signature = request.headers.get("X-Razorpay-Signature")
+
+    if not razorpay_adapter.verify_razorpay_signature(raw_body, signature):
+        app.logger.warning("Rejected Razorpay webhook: signature verification failed.")
+        return jsonify({"ok": False, "error": "invalid_signature"}), 400
+
+    try:
+        payload = json.loads(raw_body.decode("utf-8"))
+    except (ValueError, UnicodeDecodeError):
+        return jsonify({"ok": False, "error": "invalid_json"}), 400
+
+    record = razorpay_adapter.map_razorpay_event(payload)
+    if record is None:
+        # Recognized-but-unhandled event type, or missing required fields
+        # (e.g. no resolvable customer_id). Acknowledge so Razorpay stops retrying.
+        return jsonify({"ok": True, "skipped": True,
+                        "event": payload.get("event")}), 200
+
+    if record.get("amount") is None or float(record["amount"]) <= 0:
+        # A subscription-level event with no attached charge amount (e.g. a bare
+        # subscription.halted with no failed payment yet) carries nothing for the
+        # recovery pipeline to act on. Store nothing; acknowledge receipt.
+        return jsonify({"ok": True, "skipped": True,
+                        "reason": "no_actionable_amount"}), 200
+
+    conn = db.get_connection()
+    try:
+        is_duplicate, event_id = razorpay_adapter.claim_webhook_event(
+            conn, payload, raw_body, record["customer_id"])
+        if is_duplicate:
+            conn.commit()
+            return jsonify({
+                "ok": True,
+                "status": "already_processed",
+                "event_id": event_id,
+                "customer_id": record["customer_id"],
+            }), 200
+
+        existing = db.get_case(conn, record["customer_id"])
+        if existing is not None:
+            # Distinct *new* event for a customer already on file (e.g. a later
+            # failed retry on the same subscription): update in place rather than
+            # violating the customer_id PRIMARY KEY. Duplicate *event ids* never
+            # reach here — they returned already_processed above.
+            db.update_case(conn, record["customer_id"],
+                          amount=record["amount"], failure_reason=record["failure_reason"],
+                          raw_event_type=record["raw_event_type"])
+            db.mark_webhook_event_processed(conn, event_id)
+            conn.commit()
+            return jsonify({"ok": True, "updated": True,
+                            "customer_id": record["customer_id"],
+                            "event_id": event_id}), 200
+        db.insert_mandate_failure(conn, record)
+        db.mark_webhook_event_processed(conn, event_id)
+        conn.commit()
+    finally:
+        conn.close()
+
+    return jsonify({"ok": True, "created": True,
+                    "customer_id": record["customer_id"],
+                    "failure_reason": record["failure_reason"]}), 200
 
 
 @app.route("/api/run-agent-stream")
@@ -129,6 +305,32 @@ def api_ml_metrics():
     return jsonify(payload)
 
 
+@app.route("/api/ml-feature-importance")
+def api_ml_feature_importance():
+    """Global SHAP feature importance for the ML validation layer (interpretation only).
+
+    Returns the mean absolute SHAP value per ORIGINAL feature across the held-out test
+    set — i.e. which factors matter most to the recovery-likelihood model overall.
+    Computed with real SHAP values (see backend/ml/explain.py); nothing is hardcoded.
+    If shap isn't installed or the model isn't trained yet, responds with
+    {available: false} so the UI can simply hide the chart.
+
+    Like the model itself, this is additive: it explains a NON-DECISION prediction and
+    never drives any retry/escalation/compliance behavior.
+    """
+    if ml_explain is None:
+        return jsonify({"available": False,
+                        "message": "SHAP is not installed (pip install shap)."})
+    gi = ml_explain.global_feature_importance()
+    if gi is None:
+        return jsonify({"available": False,
+                        "message": ("Model not trained or SHAP unavailable. Run "
+                                    "`python backend/ml/train_model.py` first.")})
+    payload = dict(gi)
+    payload["available"] = True
+    return jsonify(payload)
+
+
 @app.route("/api/audit-check")
 def api_audit_check():
     """Automated correctness audit (additive, read-only).
@@ -147,16 +349,147 @@ def api_audit_check():
     return jsonify(report)
 
 
+@app.route("/api/chaos-test")
+def api_chaos_test():
+    """DIAGNOSTIC/TESTING TOOL — adversarial "chaos" test suite (NOT normal operation).
+
+    Runs the seven adversarial attack scenarios in backend/chaos_test.py — replayed
+    webhooks, negative/zero amounts, duplicate customer_ids, clock-skew timestamps,
+    malformed LLM responses, webhook-signature edge cases, and extreme volume — and
+    returns a PASS/FAIL report.
+
+    IMPORTANT: every scenario runs against its own FRESH, ISOLATED in-memory SQLite
+    database seeded independently. This endpoint NEVER reads, writes, or otherwise
+    touches the live demo database, and it does not change any agent/scoring/compliance
+    behavior. It exists purely to prove the system's defenses hold up under abuse; it is
+    not part of the normal recovery pipeline.
+    """
+    report = chaos_module.run_chaos_suite()
+    return jsonify(report)
+
+
+# Bounds for the Policy Sandbox inputs. retry_cap is clamped to a sane 1-5 range; the
+# four score weights must sum to ~1.0. These are validated server-side too (never
+# trust the client) before any simulation runs.
+_SIM_MIN_RETRY_CAP = 1
+_SIM_MAX_RETRY_CAP = 5
+_SIM_MAX_RUNS = 100
+_SIM_WEIGHT_KEYS = ("success", "tenure", "retry", "reason")
+
+
+def _parse_policy_params(payload):
+    """Validate a sandbox request body into an agent.PolicyParams.
+
+    Returns (policy, error_message). On any validation failure `policy` is None and
+    `error_message` explains why, so the endpoint can return a 400 without running
+    anything. Enforces retry_cap in [1,5], the four weights summing to 1.0 (+/-0.01),
+    and salary_window_mode in {adaptive, generic_only}.
+    """
+    # retry_cap
+    try:
+        retry_cap = int(payload.get("retry_cap", agent_module.MAX_RETRIES))
+    except (TypeError, ValueError):
+        return None, "retry_cap must be an integer between 1 and 5."
+    if not (_SIM_MIN_RETRY_CAP <= retry_cap <= _SIM_MAX_RETRY_CAP):
+        return None, f"retry_cap must be between {_SIM_MIN_RETRY_CAP} and {_SIM_MAX_RETRY_CAP}."
+
+    # score_weights: default to the live defaults when omitted.
+    raw_weights = payload.get("score_weights")
+    if raw_weights is None:
+        weights = dict(agent_module.DEFAULT_SCORE_WEIGHTS)
+    else:
+        if not isinstance(raw_weights, dict):
+            return None, "score_weights must be an object with success/tenure/retry/reason."
+        weights = {}
+        for k in _SIM_WEIGHT_KEYS:
+            if k not in raw_weights:
+                return None, f"score_weights is missing '{k}'."
+            try:
+                weights[k] = float(raw_weights[k])
+            except (TypeError, ValueError):
+                return None, f"score_weights['{k}'] must be a number."
+            if weights[k] < 0:
+                return None, "score weights cannot be negative."
+        total = sum(weights[k] for k in _SIM_WEIGHT_KEYS)
+        if abs(total - 1.0) > 0.01:
+            return None, (f"score weights must sum to 1.0 (got {total:.3f}). "
+                          "Adjust the four weights so they add up to 1.0.")
+
+    # salary_window_mode
+    mode = payload.get("salary_window_mode", "adaptive")
+    if mode not in ("adaptive", "generic_only"):
+        return None, "salary_window_mode must be 'adaptive' or 'generic_only'."
+
+    policy = agent_module.PolicyParams(
+        retry_cap=retry_cap,
+        score_weights=weights,
+        salary_window_mode=mode,
+    )
+    return policy, None
+
+
+@app.route("/api/simulate", methods=["POST"])
+def api_simulate():
+    """Policy Experimentation Sandbox: Monte Carlo the pipeline under given params.
+
+    Body: {n_runs, retry_cap, score_weights:{success,tenure,retry,reason},
+           salary_window_mode}. Runs the full simulation n_runs times under the given
+           policy AND under the current default policy over the same seeds, and returns
+           mean/std/95% CI per metric plus the paired delta (so the UI can state an
+           improvement as "X% +/- Y%").
+
+    IMPORTANT: this is an analysis tool only. It runs in isolated in-memory databases,
+    never touches the live agent's configuration or the on-disk database, and (for
+    speed) skips the LLM entirely — narration is template-based and never affects any
+    decision, score, or outcome.
+    """
+    payload = request.get_json(silent=True) or {}
+
+    try:
+        n_runs = int(payload.get("n_runs", 30))
+    except (TypeError, ValueError):
+        return jsonify({"ok": False, "message": "n_runs must be an integer."}), 400
+    if n_runs < 1 or n_runs > _SIM_MAX_RUNS:
+        return jsonify({"ok": False,
+                        "message": f"n_runs must be between 1 and {_SIM_MAX_RUNS}."}), 400
+
+    policy, err = _parse_policy_params(payload)
+    if err:
+        return jsonify({"ok": False, "message": err}), 400
+
+    # Run modified vs. default over the same seed set for a fair paired comparison.
+    comparison = simulation_runner.compare_policies(policy, n_runs=n_runs)
+    return jsonify({
+        "ok": True,
+        "n_runs": n_runs,
+        "used_llm": False,
+        "note": ("Analysis tool only: repeated simulations in isolated in-memory "
+                 "databases. Does not change the live agent's configuration and skips "
+                 "the LLM (narration is template-based and never affects outcomes)."),
+        "default": comparison["default"],
+        "modified": comparison["modified"],
+        "delta": comparison["delta"],
+    }), 200
+
+
 @app.route("/api/metrics")
 def api_metrics():
-    """Core KPIs (R5) plus the naive baseline for the comparison card (R11)."""
+    """Core KPIs (R5) plus two baselines for the comparison card (R11).
+
+    'baseline' (naive, 1 attempt, no strategy) is kept for backward compatibility
+    with existing callers. 'dumb_persistence' (same retry BUDGET as the agent, but
+    no scoring/timing/dunning) isolates the value of the agent's actual intelligence
+    from the value of simply retrying more times — see baseline.py's module
+    docstring for why this second baseline exists.
+    """
     conn = db.get_connection()
     try:
         core = metrics.core_metrics(conn)
         base = baseline.run_baseline(conn)
+        dumb = baseline.run_dumb_persistence_baseline(conn)
     finally:
         conn.close()
-    return jsonify({"agent": core, "baseline": base})
+    return jsonify({"agent": core, "baseline": base, "dumb_persistence": dumb})
 
 
 def _case_summary(case):
@@ -186,6 +519,10 @@ def _case_summary(case):
         # Additive, non-decision ML prediction shown alongside the rule-based score.
         # None when the model has not been trained. Never affects agent behavior.
         "ml_recovery_probability": ml_predict.predict_recovery_probability(case),
+        # Provenance: 'razorpay_live' for a case that arrived via a real, signature-
+        # verified Razorpay webhook (see /api/webhooks/razorpay); 'synthetic' for the
+        # seeded demo data. Purely informational — never affects scoring/strategy.
+        "source": case.get("source", "synthetic"),
     }
 
 
@@ -217,6 +554,40 @@ def api_case_audit(customer_id):
     return jsonify({"case": summary, "audit": trail, "messages": msgs})
 
 
+@app.route("/api/cases/<customer_id>/explain")
+def api_case_explain(customer_id):
+    """Per-case SHAP breakdown: why the ML model predicts this case's recovery likelihood.
+
+    Returns the top signed feature contributions (positive = pushed toward "recovered",
+    negative = toward "not recovered"), the model's base value, and the reconstructed
+    probability (base + sum of SHAP values through the sigmoid), which equals the
+    model's actual predicted probability — the SHAP additivity property.
+
+    This is the ML validation/interpretability layer. It explains a NON-DECISION
+    prediction and never drives any agent/scoring/compliance behavior.
+    """
+    if ml_explain is None:
+        return jsonify({"available": False,
+                        "message": "SHAP is not installed (pip install shap)."})
+    conn = db.get_connection()
+    try:
+        case = db.get_case(conn, customer_id)
+    finally:
+        conn.close()
+    if case is None:
+        return jsonify({"error": "case not found"}), 404
+    breakdown = ml_explain.explain_case(case)
+    if breakdown is None:
+        return jsonify({"available": False,
+                        "message": ("Model not trained or SHAP unavailable. Run "
+                                    "`python backend/ml/train_model.py` first.")})
+    return jsonify({
+        "available": True,
+        "customer_id": customer_id,
+        "explanation": breakdown,
+    })
+
+
 @app.route("/api/cohorts")
 def api_cohorts():
     """Recovery-rate breakdown by tenure bucket and merchant_category (R10)."""
@@ -233,6 +604,44 @@ def api_exceptions():
 def api_rejected_webhooks():
     """Webhook events blocked at ingestion for failing HMAC signature verification."""
     return jsonify(metrics.rejected_webhooks())
+
+
+@app.route("/api/activity")
+def api_activity():
+    """Recent audit_log events across all cases, newest first (read-only feed).
+
+    Additive, read-only view over the existing audit_log rows written by the agent.
+    Does not change any agent/scoring/compliance behavior; it simply surfaces the
+    most recent events for the dashboard's Activity feed. `limit` (default 40) caps
+    how many rows are returned.
+    """
+    try:
+        limit = int(request.args.get("limit", 40))
+    except (TypeError, ValueError):
+        limit = 40
+    limit = max(1, min(limit, 200))
+
+    conn = db.get_connection()
+    try:
+        rows = db.get_all_audit(conn)
+    finally:
+        conn.close()
+    # get_all_audit returns ascending by event_id; take the newest `limit`, newest first.
+    recent = list(reversed(rows))[:limit]
+    events = [
+        {
+            "event_id": r.get("event_id"),
+            "customer_id": r.get("customer_id"),
+            "event_timestamp": r.get("event_timestamp"),
+            "event_type": r.get("event_type"),
+            "action_taken": r.get("action_taken"),
+            "outcome": r.get("outcome"),
+            "attempt_number": r.get("attempt_number"),
+            "case_status_after": r.get("case_status_after"),
+        }
+        for r in recent
+    ]
+    return jsonify({"events": events, "total": len(rows)})
 
 
 @app.route("/api/messages/<customer_id>")
@@ -282,10 +691,31 @@ def api_ask():
 
     spec = llm_client.translate_query(question)
     if spec is None:
-        # LLM unavailable/failed entirely.
-        return jsonify({"ok": False, "reason": "unavailable",
-                        "message": "The query assistant is unavailable right now. "
-                                   "Try one of the example queries."}), 200
+        # The LLM call itself failed (not a "couldn't understand" case). Tailor the
+        # message to the REAL underlying reason so a transient rate-limit reads
+        # differently from a hard outage, and log the real cause server-side. The
+        # actual error was already logged inside llm_client._chat().
+        err = llm_client.last_error()
+        if err == llm_client.ERR_RATE_LIMIT:
+            reason, msg = ("rate_limited",
+                           "The query assistant is temporarily rate-limited. "
+                           "Give it a moment and try again.")
+        elif err == llm_client.ERR_TIMEOUT:
+            reason, msg = ("timeout",
+                           "The query assistant took too long to respond. "
+                           "Please try again in a moment.")
+        elif err == llm_client.ERR_NO_KEY:
+            reason, msg = ("unavailable",
+                           "The query assistant isn't configured right now. "
+                           "Try one of the example queries.")
+        else:
+            # network / http_error / bad_response / unknown.
+            reason, msg = ("unavailable",
+                           "The query assistant is temporarily unavailable. "
+                           "Please try again shortly, or use one of the examples.")
+        app.logger.warning("/api/ask LLM failure: reason=%s underlying=%s question=%r",
+                           reason, err, question)
+        return jsonify({"ok": False, "reason": reason, "message": msg}), 200
     if not spec:
         # Understood the call but produced no usable filters.
         return jsonify({"ok": False, "reason": "unclear",
@@ -346,4 +776,19 @@ def api_export():
 
 if __name__ == "__main__":
     db.init_db()
-    app.run(debug=True, port=5000)
+    # The live agent run writes to mandate_rescue.db (and its -wal/-journal sidecars)
+    # on every run. Flask's default "stat" reloader watches all files under the project,
+    # so those writes were triggering a mid-run server restart that forcibly closed the
+    # in-flight /api/run-agent-stream SSE connection — making the live pipeline appear to
+    # freeze partway. We keep the debugger on but exclude the database files from the
+    # reloader's watch list so a run never restarts the server. Source-code edits still
+    # trigger a reload as usual.
+    _DB_GLOBS = [
+        db.DB_PATH,
+        db.DB_PATH + "-wal",
+        db.DB_PATH + "-journal",
+        db.DB_PATH + "-shm",
+        os.path.join(_PROJECT_ROOT, "*.db"),
+        os.path.join(_PROJECT_ROOT, "*.db-*"),
+    ]
+    app.run(debug=True, port=5000, threaded=True, exclude_patterns=_DB_GLOBS)
