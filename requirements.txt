@@ -8,9 +8,20 @@ joblib==1.5.3
 pandas==3.0.5
 numpy==2.5.2
 
+# SHAP explainability for the additive ML layer (backend/ml/explain.py). Provides
+# per-case feature-contribution breakdowns and a global feature-importance summary.
+# Like the model itself, this is an ADDITIVE validation/interpretability layer and
+# does NOT drive any agent/scoring/compliance decision.
+shap==0.52.0
+
 # LLM integration (backend/llm_client.py) uses the standard-library urllib to call
 # the Groq / OpenAI-compatible chat-completions endpoint, so it needs NO extra pip
-# package. It only requires the GROQ_API_KEY environment variable to be set:
+# package. It only requires the GROQ_API_KEY environment variable to be set.
+# Set it either in a local .env file (loaded automatically via python-dotenv) or
+# as a real env var:
 #   PowerShell:  $env:GROQ_API_KEY = "gsk_..."
 # Optional overrides: LLM_MODEL, LLM_API_BASE, LLM_TIMEOUT.
 # Without a key, the app transparently falls back to the deterministic templates.
+
+# Loads a local .env file into the environment on startup (optional but convenient).
+python-dotenv==1.0.1
