@@ -1,0 +1,43 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.11"]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: "pip"
+
+      - name: Install dependencies
+        run: pip install -r requirements-dev.txt
+
+      - name: Run pytest (backend/tests/)
+        env:
+          WEBHOOK_SECRET: ci-test-webhook-secret-not-for-real-use-0123456789abcdef
+          RAZORPAY_WEBHOOK_SECRET: ci-test-razorpay-secret-not-for-real-use-0123456789abcdef
+          MANDATE_RESCUE_API_KEY: ci-test-api-key-0123456789abcdef
+        run: pytest -q
+
+      - name: Run the standalone correctness audit CLI
+        env:
+          WEBHOOK_SECRET: ci-test-webhook-secret-not-for-real-use-0123456789abcdef
+        run: |
+          python backend/seed.py
+          python backend/agent.py
+          python backend/audit_check.py
+
+      - name: Run the standalone chaos-test CLI
+        env:
+          WEBHOOK_SECRET: ci-test-webhook-secret-not-for-real-use-0123456789abcdef
+        run: python backend/chaos_test.py
