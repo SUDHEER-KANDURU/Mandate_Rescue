@@ -17,11 +17,19 @@ If GROQ_API_KEY is unset, every call transparently returns the template fallback
 """
 
 import json
+import logging
 import os
+import time
 import urllib.error
 import urllib.request
 
 import messaging
+
+# Server-side logger. The LLM sits behind graceful template fallbacks, so callers
+# never see a stack trace -- but we MUST record the real underlying error here so
+# failures (rate limits, timeouts, bad responses) are diagnosable from the logs
+# instead of vanishing silently.
+log = logging.getLogger("mandate_rescue.llm")
 
 # --- Configuration ----------------------------------------------------------
 
@@ -31,11 +39,43 @@ API_BASE = os.environ.get("LLM_API_BASE", "https://api.groq.com/openai/v1")
 API_URL = API_BASE.rstrip("/") + "/chat/completions"
 
 # A fast, inexpensive instruct model is plenty for one-paragraph narration.
-MODEL = os.environ.get("LLM_MODEL", "llama-3.1-8b-instant")
+# gpt-oss-20b is a small, current Groq model; override via LLM_MODEL if desired.
+MODEL = os.environ.get("LLM_MODEL", "openai/gpt-oss-20b")
 
 # Short timeout: this is decoration on top of a working system, so we would rather
 # fall back to templates quickly than make the UI wait on a slow call.
 REQUEST_TIMEOUT = float(os.environ.get("LLM_TIMEOUT", "8"))
+
+# Retry policy for TRANSIENT failures (HTTP 429 rate-limit, HTTP 5xx, timeouts,
+# transient network errors). A malformed/misshapen response or an auth error (401/403)
+# is NOT transient, so we do not retry those. Backoff is exponential with a small base
+# so 2-3 attempts still stay inside a reasonable UI budget.
+LLM_MAX_ATTEMPTS = int(os.environ.get("LLM_MAX_ATTEMPTS", "3"))
+LLM_BACKOFF_BASE = float(os.environ.get("LLM_BACKOFF_BASE", "0.5"))  # seconds
+
+# Failure-reason codes surfaced to callers via the last-error channel so the API can
+# tailor the user-facing message (rate-limited vs. temporarily down vs. not understood).
+ERR_RATE_LIMIT = "rate_limit"
+ERR_TIMEOUT = "timeout"
+ERR_NETWORK = "network"
+ERR_HTTP = "http_error"
+ERR_BAD_RESPONSE = "bad_response"
+ERR_NO_KEY = "no_key"
+
+# Reasons we treat as transient and therefore worth retrying.
+_TRANSIENT = frozenset({ERR_RATE_LIMIT, ERR_TIMEOUT, ERR_NETWORK})
+
+# The most recent low-level failure reason (one of the ERR_* codes), or None on
+# success. Set by _chat(); read by translate_query() so /api/ask can distinguish a
+# transient outage from a genuinely unclear question. Not thread-safe by design --
+# this is a single-worker demo; a multi-worker deploy would thread this through
+# return values instead.
+_LAST_ERROR = None
+
+
+def last_error():
+    """Return the most recent _chat failure code (ERR_*), or None after a success."""
+    return _LAST_ERROR
 
 # API key is read from the environment only. Never hardcode it.
 def _api_key():
@@ -80,14 +120,72 @@ def _cache_key(case_id, kind, *extra):
 
 # --- Low-level call ----------------------------------------------------------
 
-def _chat(system_prompt, user_prompt, max_tokens=320, temperature=0.4):
-    """Call the chat-completions endpoint. Returns text, or None on any failure.
+def _classify_http_error(err):
+    """Map an HTTPError to an ERR_* code (429 -> rate_limit, 5xx -> transient http)."""
+    code = getattr(err, "code", None)
+    if code == 429:
+        return ERR_RATE_LIMIT
+    if code is not None and 500 <= code < 600:
+        # Server-side hiccup: transient, retry it (reuse the network bucket).
+        return ERR_NETWORK
+    # 4xx (auth, bad request, etc.) is a real, non-transient error.
+    return ERR_HTTP
 
-    Returning None (rather than raising) lets every public function fall back to
-    deterministic template text without special-casing exceptions at each site.
+
+def _attempt_once(req):
+    """Make one HTTP call. Returns (text, None) on success or (None, err_code) on failure.
+
+    Never raises: every failure is classified into an ERR_* code so the retry loop
+    can decide whether to back off and try again, and so the real cause is logged.
     """
+    try:
+        with urllib.request.urlopen(req, timeout=REQUEST_TIMEOUT) as resp:
+            body = json.loads(resp.read().decode("utf-8"))
+        text = body["choices"][0]["message"]["content"].strip()
+        if not text:
+            return None, ERR_BAD_RESPONSE
+        return text, None
+    except urllib.error.HTTPError as e:
+        code = _classify_http_error(e)
+        # Log the status and (truncated) body so a 429/4xx/5xx is diagnosable.
+        detail = ""
+        try:
+            detail = e.read().decode("utf-8", "replace")[:300]
+        except Exception:
+            pass
+        log.warning("LLM HTTP %s (%s): %s", getattr(e, "code", "?"), code, detail)
+        return None, code
+    except (TimeoutError, urllib.error.URLError) as e:
+        # URLError commonly wraps a socket timeout; treat those as timeouts.
+        reason = getattr(e, "reason", e)
+        is_timeout = isinstance(e, TimeoutError) or "timed out" in str(reason).lower()
+        code = ERR_TIMEOUT if is_timeout else ERR_NETWORK
+        log.warning("LLM %s: %s", code, reason)
+        return None, code
+    except (KeyError, IndexError, ValueError) as e:
+        # Response parsed but was not the expected shape (or was not valid JSON).
+        log.warning("LLM bad response shape: %s", e)
+        return None, ERR_BAD_RESPONSE
+    except OSError as e:
+        log.warning("LLM network/OS error: %s", e)
+        return None, ERR_NETWORK
+
+
+def _chat(system_prompt, user_prompt, max_tokens=320, temperature=0.4):
+    """Call the chat-completions endpoint, with retry on transient failures.
+
+    Returns the text on success, or None on failure. On failure, the specific reason
+    is recorded in module-level `_LAST_ERROR` (readable via last_error()) and logged
+    server-side, so callers can degrade gracefully while the real cause is preserved.
+
+    Transient failures (HTTP 429, HTTP 5xx, timeouts, network errors) are retried up
+    to LLM_MAX_ATTEMPTS times with exponential backoff. Non-transient failures (auth
+    errors, malformed responses) fail fast with no retry.
+    """
+    global _LAST_ERROR
     key = _api_key()
     if not key:
+        _LAST_ERROR = ERR_NO_KEY
         return None
 
     payload = {
@@ -106,18 +204,33 @@ def _chat(system_prompt, user_prompt, max_tokens=320, temperature=0.4):
         headers={
             "Authorization": f"Bearer {key}",
             "Content-Type": "application/json",
+            # Groq's Cloudflare edge rejects the default urllib User-Agent with a
+            # 403 (error 1010), so send an explicit one.
+            "User-Agent": "MandateRescue/1.0",
         },
         method="POST",
     )
-    try:
-        with urllib.request.urlopen(req, timeout=REQUEST_TIMEOUT) as resp:
-            body = json.loads(resp.read().decode("utf-8"))
-        text = body["choices"][0]["message"]["content"].strip()
-        return text or None
-    except (urllib.error.URLError, urllib.error.HTTPError, TimeoutError,
-            KeyError, IndexError, ValueError, OSError):
-        # Any network/parse/shape error -> caller uses the template fallback.
-        return None
+
+    last_code = None
+    for attempt in range(1, LLM_MAX_ATTEMPTS + 1):
+        text, code = _attempt_once(req)
+        if text is not None:
+            _LAST_ERROR = None
+            return text
+        last_code = code
+        # Retry only transient failures, and only if attempts remain.
+        if code in _TRANSIENT and attempt < LLM_MAX_ATTEMPTS:
+            backoff = LLM_BACKOFF_BASE * (2 ** (attempt - 1))
+            log.info("LLM transient failure (%s), retry %d/%d after %.2fs",
+                     code, attempt, LLM_MAX_ATTEMPTS - 1, backoff)
+            time.sleep(backoff)
+            continue
+        break
+
+    _LAST_ERROR = last_code
+    log.warning("LLM call failed after %d attempt(s); final reason=%s",
+                LLM_MAX_ATTEMPTS if last_code in _TRANSIENT else 1, last_code)
+    return None
 
 
 # --- Public API --------------------------------------------------------------
@@ -174,7 +287,7 @@ def generate_reasoning(case_data, decision_factors):
         "exactly as given. Do not invent anything."
     )
 
-    text = _chat(_REASONING_SYSTEM, user_prompt, max_tokens=220, temperature=0.4) \
+    text = _chat(_REASONING_SYSTEM, user_prompt, max_tokens=512, temperature=0.4) \
         if _llm_allowed(case_id) else None
     result = text if text else ground_truth
     _CACHE[ck] = result
@@ -225,7 +338,7 @@ def generate_message(case_data, tone="Standard", channel="SMS"):
         "amounts. Reference style example: " + fallback
     )
 
-    text = _chat(_MESSAGE_SYSTEM, user_prompt, max_tokens=180, temperature=0.6) \
+    text = _chat(_MESSAGE_SYSTEM, user_prompt, max_tokens=512, temperature=0.6) \
         if _llm_allowed(case_id) else None
     result = text if text else fallback
     _CACHE[ck] = result
@@ -297,7 +410,9 @@ def translate_query(question):
     if ck in _CACHE:
         return _CACHE[ck]
 
-    text = _chat(_QUERY_SYSTEM, "Question: " + q, max_tokens=160, temperature=0.0)
+    # Budget must be generous enough that the JSON object is never truncated
+    # mid-value (a cut-off like {"amount_min": would fail to parse -> {}).
+    text = _chat(_QUERY_SYSTEM, "Question: " + q, max_tokens=512, temperature=0.0)
     if not text:
         return None
 
@@ -353,5 +468,5 @@ def summarize_results(question, count, sample):
         f"Sample of matches (not the full set): {json.dumps(sample_facts, default=str)}\n"
         "Write one sentence stating what was found, leading with the exact count."
     )
-    text = _chat(system, user, max_tokens=80, temperature=0.3)
+    text = _chat(system, user, max_tokens=256, temperature=0.3)
     return text if text else fallback
