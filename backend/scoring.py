@@ -22,14 +22,30 @@ REASON_BASE = {
 }
 
 
-def score_case(case):
-    """Return (score:int 0-100, factors:dict) for a mandate_failures dict."""
+def score_case(case, weights=None, retry_cap=None):
+    """Return (score:int 0-100, factors:dict) for a mandate_failures dict.
+
+    `weights` is an optional dict with keys success/tenure/retry/reason. When None
+    (the default) the module-level W_* constants are used, so existing callers get
+    byte-for-byte identical behavior. `retry_cap` optionally overrides RETRY_CAP for
+    the retry-burden normalization (defaults to the module constant). Both parameters
+    exist so the Policy Experimentation Sandbox can explore score sensitivity without
+    changing the live agent's defaults.
+    """
+    w_success = W_SUCCESS if weights is None else float(weights.get("success", W_SUCCESS))
+    w_tenure = W_TENURE if weights is None else float(weights.get("tenure", W_TENURE))
+    w_retry = W_RETRY if weights is None else float(weights.get("retry", W_RETRY))
+    w_reason = W_REASON if weights is None else float(weights.get("reason", W_REASON))
+    cap = RETRY_CAP if retry_cap is None else int(retry_cap)
+    if cap <= 0:
+        cap = RETRY_CAP
+
     success = max(0.0, min(float(case.get("past_payment_success_rate", 0.0)), 1.0))
     tenure_component = min(float(case.get("customer_tenure_months", 0)) / TENURE_CAP_MONTHS, 1.0)
-    retry_component = 1.0 - min(float(case.get("past_retry_count", 0)) / RETRY_CAP, 1.0)
+    retry_component = 1.0 - min(float(case.get("past_retry_count", 0)) / cap, 1.0)
     reason_component = REASON_BASE.get(case.get("failure_reason", ""), 0.5)
-    raw = (W_SUCCESS * success + W_TENURE * tenure_component
-           + W_RETRY * retry_component + W_REASON * reason_component)
+    raw = (w_success * success + w_tenure * tenure_component
+           + w_retry * retry_component + w_reason * reason_component)
     factors = {
         "success_rate": round(success, 2),
         "tenure_component": round(tenure_component, 2),

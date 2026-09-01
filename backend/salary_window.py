@@ -24,8 +24,22 @@ def _parse_history(case):
     return days
 
 
-def infer_window(case):
-    """Return a dict describing the chosen salary window (inferred or generic)."""
+def infer_window(case, mode="adaptive"):
+    """Return a dict describing the chosen salary window (inferred or generic).
+
+    `mode` controls personalization:
+      - "adaptive" (default): current v2 behavior. Personalize to the customer's
+        modal payday when there is enough history; otherwise fall back to generic.
+      - "generic_only": always use the generic fallback window, ignoring history.
+        Used by the Policy Sandbox to measure the value of personalization by
+        comparison. This does not change the default live-agent behavior.
+    """
+    if mode == "generic_only":
+        generic = GENERIC_WINDOWS[0]
+        reason = (f"generic salary window (days {generic[0]}-{generic[1]}); "
+                  f"personalization disabled (generic_only policy)")
+        return {"target_day": generic[0], "window": generic, "inferred": False,
+                "label": "generic", "reason": reason}
     days = _parse_history(case)
     if len(days) >= MIN_HISTORY_POINTS:
         modal_day = Counter(days).most_common(1)[0][0]

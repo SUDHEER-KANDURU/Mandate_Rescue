@@ -14,8 +14,28 @@ DB_PATH = os.path.join(_PROJECT_ROOT, "mandate_rescue.db")
 
 
 def get_connection():
-    """Return a SQLite connection with row access by column name and FK enforcement."""
-    conn = sqlite3.connect(DB_PATH)
+    """Return a SQLite connection with row access by column name and FK enforcement.
+
+    A busy timeout is set so that brief write contention (e.g. a live agent run
+    streaming writes while another request touches the same DB) waits and retries
+    instead of failing immediately with "database is locked". Without this, a
+    concurrent /api/reset during an in-flight run could 500.
+    """
+    conn = sqlite3.connect(DB_PATH, timeout=15.0)
+    conn.row_factory = sqlite3.Row
+    conn.execute("PRAGMA foreign_keys = ON")
+    conn.execute("PRAGMA busy_timeout = 15000")
+    return conn
+
+
+def get_memory_connection():
+    """Return an isolated in-memory SQLite connection (same row/PRAGMA setup).
+
+    Used by the Policy Experimentation Sandbox so repeated simulation runs never touch
+    the on-disk `mandate_rescue.db`. The database exists only for the lifetime of the
+    returned connection; the caller is responsible for init_db() + seeding + closing.
+    """
+    conn = sqlite3.connect(":memory:")
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA foreign_keys = ON")
     return conn
@@ -43,7 +63,8 @@ CREATE TABLE IF NOT EXISTS mandate_failures (
     dunning_stage             INTEGER NOT NULL DEFAULT 0,
     health_score              REAL,
     history_success_days      TEXT,
-    webhook_signature         TEXT
+    webhook_signature         TEXT,
+    source                    TEXT    NOT NULL DEFAULT 'synthetic'
 );
 
 CREATE TABLE IF NOT EXISTS audit_log (
@@ -61,6 +82,16 @@ CREATE TABLE IF NOT EXISTS audit_log (
 
 CREATE INDEX IF NOT EXISTS idx_audit_customer ON audit_log(customer_id);
 CREATE INDEX IF NOT EXISTS idx_audit_event_type ON audit_log(event_type);
+
+CREATE TABLE IF NOT EXISTS webhook_events (
+    id                INTEGER PRIMARY KEY AUTOINCREMENT,
+    razorpay_event_id TEXT    UNIQUE NOT NULL,
+    payload_hash      TEXT,
+    received_at       DATETIME DEFAULT CURRENT_TIMESTAMP,
+    processed         INTEGER NOT NULL DEFAULT 0
+);
+
+CREATE INDEX IF NOT EXISTS idx_webhook_events_event_id ON webhook_events(razorpay_event_id);
 """
 
 
@@ -83,7 +114,10 @@ def _migrate(conn):
     add columns to an already-created table). Adds any missing whitelisted columns."""
     existing = {row[1] for row in conn.execute("PRAGMA table_info(mandate_failures)")}
     # column name -> SQL type/definition for additive ALTERs.
-    additive = {"webhook_signature": "TEXT"}
+    additive = {
+        "webhook_signature": "TEXT",
+        "source": "TEXT NOT NULL DEFAULT 'synthetic'",
+    }
     for col, decl in additive.items():
         if col not in existing:
             conn.execute(f"ALTER TABLE mandate_failures ADD COLUMN {col} {decl}")
@@ -98,7 +132,9 @@ def reset_db(conn=None):
         init_db(conn)
         conn.execute("DELETE FROM audit_log")
         conn.execute("DELETE FROM mandate_failures")
+        conn.execute("DELETE FROM webhook_events")
         conn.execute("DELETE FROM sqlite_sequence WHERE name = 'audit_log'")
+        conn.execute("DELETE FROM sqlite_sequence WHERE name = 'webhook_events'")
         conn.commit()
     finally:
         if own:
@@ -112,6 +148,7 @@ MANDATE_COLUMNS = [
     "customer_tenure_months", "past_payment_success_rate", "merchant_category",
     "case_status", "raw_event_type", "mandate_limit", "compliance_status",
     "dunning_stage", "health_score", "history_success_days", "webhook_signature",
+    "source",
 ]
 
 
@@ -174,3 +211,35 @@ def get_audit_for_case(conn, customer_id):
 def get_all_audit(conn):
     rows = conn.execute("SELECT * FROM audit_log ORDER BY event_id").fetchall()
     return [dict(r) for r in rows]
+
+
+def get_webhook_event(conn, razorpay_event_id):
+    """Return the webhook_events row for this Razorpay event id, or None."""
+    row = conn.execute(
+        "SELECT * FROM webhook_events WHERE razorpay_event_id = ?",
+        (razorpay_event_id,),
+    ).fetchone()
+    return dict(row) if row else None
+
+
+def insert_webhook_event(conn, razorpay_event_id, payload_hash=None):
+    """Insert a webhook_events row. Returns True on insert, False if the event id
+    already exists (UNIQUE constraint — the duplicate must not be treated as new)."""
+    try:
+        conn.execute(
+            """
+            INSERT INTO webhook_events (razorpay_event_id, payload_hash, processed)
+            VALUES (?, ?, 0)
+            """,
+            (razorpay_event_id, payload_hash),
+        )
+        return True
+    except sqlite3.IntegrityError:
+        return False
+
+
+def mark_webhook_event_processed(conn, razorpay_event_id):
+    conn.execute(
+        "UPDATE webhook_events SET processed = 1 WHERE razorpay_event_id = ?",
+        (razorpay_event_id,),
+    )
