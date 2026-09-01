@@ -1,0 +1,4 @@
+-r requirements.txt
+
+# Test suite (backend/tests/) and CI.
+pytest==8.3.4
