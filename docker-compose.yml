@@ -1,0 +1,22 @@
+services:
+  mandate-rescue:
+    build: .
+    ports:
+      - "5000:5000"
+    environment:
+      - LOG_LEVEL=INFO
+    # Loads secrets/config from a local .env (not committed — see .env.example).
+    # If you don't have a .env yet, copy .env.example to .env first, or comment
+    # this out and pass -e flags manually.
+    env_file:
+      - .env
+    volumes:
+      # Keep the SQLite database on the host so `docker compose down` doesn't wipe
+      # demo data. Matches the on-disk path db.py computes at the project root.
+      - ./mandate_rescue.db:/app/mandate_rescue.db
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5000/healthz"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
