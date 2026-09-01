@@ -145,8 +145,9 @@ def check_over_limit_reauth(cases, audit_by_case):
     normal salary-window / silent-retry strategy."""
     violations = []
     for c in cases:
-        # Rejected cases never entered the pipeline; skip (Rule 4 covers them).
-        if c["case_status"] == "rejected":
+        # Rejected/invalid cases never entered the pipeline; skip (Rule 4 and the
+        # ingestion validation gate cover them).
+        if c["case_status"] in ("rejected", "invalid"):
             continue
         amount = float(c["amount"])
         limit = float(c.get("mandate_limit") or 5000)

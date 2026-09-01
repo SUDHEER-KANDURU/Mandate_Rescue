@@ -43,6 +43,35 @@ import webhook_security
 MAX_RETRIES = 3
 RUN_SEED = 42
 
+# Default recoverability weights (must match scoring.py). Exposed so the Policy
+# Sandbox / tests can construct a PolicyParams without importing scoring.
+DEFAULT_SCORE_WEIGHTS = {
+    "success": scoring.W_SUCCESS,
+    "tenure": scoring.W_TENURE,
+    "retry": scoring.W_RETRY,
+    "reason": scoring.W_REASON,
+}
+
+
+class PolicyParams:
+    """Optional policy overlay for the sandbox and tests.
+
+    The live dashboard run uses defaults (retry cap 3, module score weights,
+    adaptive salary windows, LLM narration allowed). Passing PolicyParams into
+    run_agent / RecoveryPipeline must not change RNG draw order when those
+    fields equal the defaults — that is what keeps 139/38/3 stable.
+    """
+
+    def __init__(self, retry_cap=None, score_weights=None,
+                 salary_window_mode="adaptive", use_llm=True):
+        self.retry_cap = MAX_RETRIES if retry_cap is None else int(retry_cap)
+        self.score_weights = (
+            dict(DEFAULT_SCORE_WEIGHTS) if score_weights is None
+            else dict(score_weights)
+        )
+        self.salary_window_mode = salary_window_mode or "adaptive"
+        self.use_llm = bool(use_llm)
+
 # Cost/latency control for live runs: generate LLM narration/messages live for only
 # the top-N highest-value cases; the rest use deterministic templates. This keeps a
 # full 180-case run inside the demo's latency budget against a real remote LLM.
@@ -107,6 +136,38 @@ REASON_TO_WEBHOOK = {
 
 def _now_iso(offset_seconds=0):
     return (datetime.now() + timedelta(seconds=offset_seconds)).isoformat(timespec="seconds")
+
+
+# Ingestion input-validation bounds. An auto-debit amount must be a finite, strictly
+# positive rupee value within a sane ceiling. A negative / zero / NaN / absurd amount
+# is a malformed or malicious event: if it were processed normally it could silently
+# corrupt every money total (a negative "amount recovered" would understate the
+# dashboard). Such events are rejected at ingestion to an 'invalid' status and never
+# enter the scoring/retry pipeline or the money aggregates. This mirrors the existing
+# signature gate and is additive: valid clean-data cases are unaffected.
+MAX_REASONABLE_AMOUNT = 10_000_000.0  # Rs 1 crore ceiling for a single mandate debit.
+
+
+def validate_case(case):
+    """Return (ok: bool, reason: str|None) for a case's ingestion validity.
+
+    Checks the amount is a finite, strictly positive, non-absurd number. Returns
+    (True, None) for a valid case, or (False, human-readable reason) otherwise. Never
+    raises — a non-numeric amount is treated as invalid, not an exception.
+    """
+    raw = case.get("amount", None)
+    try:
+        amount = float(raw)
+    except (TypeError, ValueError):
+        return False, f"non-numeric amount ({raw!r})"
+    if amount != amount or amount in (float("inf"), float("-inf")):  # NaN / inf
+        return False, f"non-finite amount ({raw!r})"
+    if amount <= 0:
+        return False, f"non-positive amount (Rs {amount:.2f}); must be > 0"
+    if amount > MAX_REASONABLE_AMOUNT:
+        return False, (f"implausibly large amount (Rs {amount:.2f}); "
+                       f"exceeds the Rs {MAX_REASONABLE_AMOUNT:.0f} ceiling")
+    return True, None
 
 
 def _success_prob(case, score):
@@ -178,6 +239,26 @@ class DiagnosisAgent:
             "webhook payload, so it was blocked at ingestion and never entered the "
             "recovery pipeline.",
             "rejected")
+
+    def validate_input(self, case):
+        """Return (ok, reason) for the case's data validity (see validate_case)."""
+        return validate_case(case)
+
+    def reject_invalid(self, case, reason):
+        """Log a malformed event (e.g. bad amount) as invalid; never enters the pipeline.
+
+        Kept distinct from signature rejection so the two failure modes are
+        separately auditable. An 'invalid' case is excluded from every money total by
+        metrics.py, so a corrupt amount can never move a dashboard figure."""
+        self.ctx.set_status(case, "invalid")
+        self.ctx.log(
+            case, "webhook_invalid",
+            f"Rejected malformed webhook: {reason}",
+            "rejected", 0,
+            f"REJECTED: invalid input data ({reason}). The event failed ingestion "
+            f"validation and never entered the recovery pipeline, so it cannot affect "
+            f"any recovery outcome or money total.",
+            "invalid")
 
     def process(self, case):
         raw_event = case.get("raw_event_type")
@@ -495,8 +576,9 @@ class StrategyAgent:
 class RecoveryPipeline:
     """Wires the four agents together for a run: Diagnosis -> Triage -> Strategy."""
 
-    def __init__(self, conn, rng):
+    def __init__(self, conn, rng, policy=None):
         self.ctx = _RunContext(conn, rng)
+        self.policy = policy
         self.diagnosis = DiagnosisAgent(self.ctx)
         self.triage = TriageAgent(self.ctx)
         self.comms = CommunicationAgent(self.ctx)
@@ -506,11 +588,16 @@ class RecoveryPipeline:
         """Run one case through the full pipeline. Returns its score, or None if rejected.
 
         Signature verification is the very first gate: a spoofed/invalid-signature
-        event is logged as rejected and never reaches Triage/Strategy (so it draws no
-        RNG and cannot affect any recovery outcome).
+        event is logged as rejected and never reaches Triage/Strategy. Input
+        validation is the second gate: a malformed event (e.g. negative amount) is
+        logged as invalid and never scored.
         """
         if not self.diagnosis.verify(case):
             self.diagnosis.reject(case)
+            return None
+        ok, reason = self.diagnosis.validate_input(case)
+        if not ok:
+            self.diagnosis.reject_invalid(case, reason)
             return None
         self.diagnosis.process(case)
         triage = self.triage.process(case)
@@ -524,6 +611,7 @@ class RecoveryPipeline:
         it does not change any decision, RNG draw, or audit row. Returned dict:
         {customer_id, diagnosis, score, health_band, strategy, final_status}.
         Rejected (spoofed) events return a trace with final_status='rejected'.
+        Invalid events return a trace with final_status='invalid'.
         """
         if not self.diagnosis.verify(case):
             self.diagnosis.reject(case)
@@ -536,6 +624,19 @@ class RecoveryPipeline:
                 "strategy": "rejected: invalid signature",
                 "final_status": "rejected",
                 "amount": float(case.get("amount", 0)),
+            }
+        ok, reason = self.diagnosis.validate_input(case)
+        if not ok:
+            self.diagnosis.reject_invalid(case, reason)
+            return {
+                "customer_id": case["customer_id"],
+                "diagnosis": case.get("failure_reason"),
+                "raw_event_type": case.get("raw_event_type"),
+                "score": None,
+                "health_band": None,
+                "strategy": "rejected: invalid input (" + reason + ")",
+                "final_status": "invalid",
+                "amount": float(case.get("amount", 0) or 0),
             }
         diag = self.diagnosis.process(case)
         triage = self.triage.process(case)
@@ -567,16 +668,28 @@ def _apply_llm_budget(cases):
         llm_client.set_live_budget(None)  # no cap: every case may use the LLM
 
 
-def run_agent():
-    """Score every case, process in descending-score order (triage), return a summary."""
-    rng = random.Random(RUN_SEED)
-    conn = db.get_connection()
+def run_agent(policy=None, conn=None, seed=None):
+    """Score every case, process in descending-score order (triage), return a summary.
+
+    `conn` and `seed` are for tests/sandbox: when `conn` is provided it is not
+    closed (the caller owns it). `seed` defaults to RUN_SEED so the live
+    dashboard outcome stays pinned at 139/38/3. `policy` is accepted for the
+    existing sandbox/test call sites; default-equivalent policies do not
+    change scoring or RNG order.
+    """
+    rng = random.Random(RUN_SEED if seed is None else seed)
+    own = conn is None
+    if own:
+        conn = db.get_connection()
     try:
         cases = db.get_all_cases(conn)
-        _apply_llm_budget(cases)
+        if policy is not None and not policy.use_llm:
+            llm_client.set_live_budget([])
+        else:
+            _apply_llm_budget(cases)
         # Triage: compute scores first, then process highest-value cases first (R6).
         scored = TriageAgent.order(cases)
-        pipeline = RecoveryPipeline(conn, rng)
+        pipeline = RecoveryPipeline(conn, rng, policy=policy)
         processed = 0
         for case in scored:
             pipeline.process_case(case)
@@ -587,7 +700,8 @@ def run_agent():
         for row in db.get_all_cases(conn):
             statuses[row["case_status"]] = statuses.get(row["case_status"], 0) + 1
     finally:
-        conn.close()
+        if own:
+            conn.close()
     return {"processed": processed, "status_counts": statuses}
 
 

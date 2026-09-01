@@ -18,10 +18,17 @@ def core_metrics(conn=None):
         conn = db.get_connection()
     try:
         cases = db.get_all_cases(conn)
-        total = len(cases)
-        amount_at_risk = sum(float(c["amount"]) for c in cases)
-        recovered_cases = [c for c in cases if c["case_status"] == "recovered"]
-        escalated_cases = [c for c in cases if c["case_status"] == "escalated"]
+        # Exclude 'invalid' events (failed input validation, e.g. a negative amount)
+        # from the money and rate aggregates: counting one would corrupt totals — a
+        # negative amount could understate amount_at_risk. 'rejected' (bad signature)
+        # is already excluded from recovered/escalated by status and carries a real
+        # amount, so it is kept in the at-risk denominator exactly as before.
+        NON_PIPELINE_STATUSES = ("invalid",)
+        counted = [c for c in cases if c["case_status"] not in NON_PIPELINE_STATUSES]
+        total = len(counted)
+        amount_at_risk = sum(float(c["amount"]) for c in counted)
+        recovered_cases = [c for c in counted if c["case_status"] == "recovered"]
+        escalated_cases = [c for c in counted if c["case_status"] == "escalated"]
         amount_recovered = sum(float(c["amount"]) for c in recovered_cases)
 
         recovery_rate = (len(recovered_cases) / total) if total else 0.0
