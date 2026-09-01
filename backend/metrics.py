@@ -19,11 +19,10 @@ def core_metrics(conn=None):
     try:
         cases = db.get_all_cases(conn)
         # Exclude 'invalid' events (failed input validation, e.g. a negative amount)
-        # from the money and rate aggregates: counting one would corrupt totals — a
-        # negative amount could understate amount_at_risk. 'rejected' (bad signature)
-        # is already excluded from recovered/escalated by status and carries a real
-        # amount, so it is kept in the at-risk denominator exactly as before.
-        NON_PIPELINE_STATUSES = ("invalid",)
+        # and 'duplicate' replay-idempotency markers from money and rate aggregates:
+        # neither ever entered the scoring pipeline, so including them would corrupt
+        # totals. 'rejected' (bad signature) is kept in the denominator as before.
+        NON_PIPELINE_STATUSES = ("invalid", "duplicate")
         counted = [c for c in cases if c["case_status"] not in NON_PIPELINE_STATUSES]
         total = len(counted)
         amount_at_risk = sum(float(c["amount"]) for c in counted)

@@ -260,6 +260,18 @@ class DiagnosisAgent:
             f"any recovery outcome or money total.",
             "invalid")
 
+    def note_duplicate(self, case):
+        """Log a redelivered event for a case that is already terminal; do not rescore."""
+        status = case.get("case_status", "new")
+        self.ctx.log(
+            case, "webhook_duplicate",
+            "Duplicate webhook ignored; case already in a terminal state",
+            "n/a", 0,
+            "Idempotency: this case already has a terminal audit event "
+            f"({status}); skipped scoring and recovery so a replay cannot "
+            "change the outcome or consume another RNG draw.",
+            status)
+
     def process(self, case):
         raw_event = case.get("raw_event_type")
         reason = case.get("failure_reason")
@@ -570,6 +582,16 @@ class StrategyAgent:
                          action_label=action_label, dunning=True)
 
 
+# Terminal audit statuses: a case with any of these in audit_log.case_status_after
+# has already finished the pipeline. A replay must not score or retry it again.
+_TERMINAL_AUDIT_STATUSES = frozenset({"recovered", "escalated", "rejected"})
+
+
+def _has_terminal_audit(conn, customer_id):
+    trail = db.get_audit_for_case(conn, customer_id)
+    return any(row.get("case_status_after") in _TERMINAL_AUDIT_STATUSES for row in trail)
+
+
 # ---------------------------------------------------------------------------
 # Pipeline orchestration
 # ---------------------------------------------------------------------------
@@ -587,11 +609,18 @@ class RecoveryPipeline:
     def process_case(self, case):
         """Run one case through the full pipeline. Returns its score, or None if rejected.
 
-        Signature verification is the very first gate: a spoofed/invalid-signature
-        event is logged as rejected and never reaches Triage/Strategy. Input
-        validation is the second gate: a malformed event (e.g. negative amount) is
-        logged as invalid and never scored.
+        Gates, in order: (1) terminal-audit idempotency — a case that already
+        ended recovered/escalated/rejected is logged as webhook_duplicate and
+        never rescored (so a second Run agent cannot break the seeded outcome);
+        (2) signature verification — a spoofed/invalid-signature event is logged
+        rejected; (3) input validation — a malformed event (e.g. negative/zero
+        amount) is logged invalid. Only a valid, correctly-signed, not-yet-terminal
+        event reaches Triage/Strategy. Each of those gates draws no RNG, so
+        recovery outcomes are unaffected.
         """
+        if _has_terminal_audit(self.ctx.conn, case["customer_id"]):
+            self.diagnosis.note_duplicate(case)
+            return None
         if not self.diagnosis.verify(case):
             self.diagnosis.reject(case)
             return None
@@ -612,7 +641,21 @@ class RecoveryPipeline:
         {customer_id, diagnosis, score, health_band, strategy, final_status}.
         Rejected (spoofed) events return a trace with final_status='rejected'.
         Invalid events return a trace with final_status='invalid'.
+        Duplicate deliveries of an already-terminal case return final_status
+        unchanged and never call Triage/Strategy (no extra RNG draws).
         """
+        if _has_terminal_audit(self.ctx.conn, case["customer_id"]):
+            self.diagnosis.note_duplicate(case)
+            return {
+                "customer_id": case["customer_id"],
+                "diagnosis": case.get("failure_reason"),
+                "raw_event_type": case.get("raw_event_type"),
+                "score": None,
+                "health_band": None,
+                "strategy": "duplicate: already in a terminal state",
+                "final_status": case.get("case_status"),
+                "amount": float(case.get("amount", 0) or 0),
+            }
         if not self.diagnosis.verify(case):
             self.diagnosis.reject(case)
             return {
