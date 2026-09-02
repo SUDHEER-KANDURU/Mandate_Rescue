@@ -138,6 +138,23 @@ def _assign_correlation_id():
     g.correlation_id = request.headers.get("X-Correlation-ID") or str(uuid.uuid4())[:8]
 
 
+# Phase 4: reset any jobs stuck in 'claimed'/'executing' on first request after
+# startup (workers may have died mid-flight). Safe to call repeatedly — it only
+# touches rows older than STALE_CLAIMED_WINDOW_MIN.
+_stale_jobs_reset = False
+
+
+@app.before_request
+def _reset_stale_jobs_once():
+    global _stale_jobs_reset
+    if not _stale_jobs_reset:
+        _stale_jobs_reset = True
+        try:
+            scheduler_module.reset_stale_claimed_jobs()
+        except Exception as exc:
+            app.logger.warning("Could not reset stale jobs on startup: %s", exc)
+
+
 @app.before_request
 def _require_api_key_for_mutations():
     if request.path not in _PROTECTED_PATHS:
@@ -968,8 +985,199 @@ def api_export():
     )
 
 
+
+# =============================================================================
+# PHASE 4 — Scheduler / Execution Status / Credential Verification endpoints
+# =============================================================================
+
+
+@app.route("/api/scheduler/run", methods=["POST"])
+def api_scheduler_run():
+    """Claim and execute all currently due recovery jobs in one synchronous pass.
+
+    Protected by X-API-Key (same gate as /api/run-agent).  Safe to call from
+    a cron job, a CI pipeline, or the dashboard "Run scheduler" button.
+
+    Returns a list of execution summaries — one per job executed — so the caller
+    can see exactly what happened and check no fake outcomes are present.
+
+    Response:
+        { "ok": true, "executed": N,
+          "results": [{ job_id, customer_id, attempt, outcome,
+                        success, execution_mode, job_status,
+                        razorpay_payment_id, payment_link_url }, ...] }
+    """
+    results = scheduler_module.run_worker_once()
+    return jsonify({"ok": True, "executed": len(results), "results": results})
+
+
+@app.route("/api/scheduler/jobs")
+def api_scheduler_jobs():
+    """Return all recovery jobs (newest first).  Read-only, no auth required.
+
+    Optional query params:
+        customer_id   — filter to one customer
+        status        — filter by job status
+        limit         — max rows (default 200, max 1000)
+    """
+    try:
+        limit = min(int(request.args.get("limit", 200)), 1000)
+    except (TypeError, ValueError):
+        limit = 200
+
+    customer_id = request.args.get("customer_id")
+    status_filter = request.args.get("status")
+
+    conn = db.get_connection()
+    try:
+        if customer_id:
+            jobs = db.get_jobs_for_case(conn, customer_id)
+        else:
+            jobs = db.get_all_jobs(conn, limit=limit)
+    finally:
+        conn.close()
+
+    if status_filter:
+        jobs = [j for j in jobs if j.get("status") == status_filter]
+
+    return jsonify({"jobs": jobs, "count": len(jobs)})
+
+
+@app.route("/api/scheduler/jobs/<job_id>")
+def api_scheduler_job_detail(job_id):
+    """Return a single recovery job row by job_id."""
+    conn = db.get_connection()
+    try:
+        job = db.get_job(conn, job_id)
+    finally:
+        conn.close()
+    if job is None:
+        return jsonify({"error": "job not found"}), 404
+    return jsonify(job)
+
+
+@app.route("/api/scheduler/jobs/cancel", methods=["POST"])
+def api_scheduler_cancel_job():
+    """Cancel a scheduled (not yet executed) recovery job.
+
+    Body: { "job_id": "...", "reason": "optional reason string" }
+    Protected by X-API-Key.
+    """
+    payload = request.get_json(silent=True) or {}
+    job_id = (payload.get("job_id") or "").strip()
+    if not job_id:
+        return jsonify({"ok": False, "message": "job_id is required."}), 400
+    reason = (payload.get("reason") or "Cancelled via API.").strip()
+
+    conn = db.get_connection()
+    try:
+        job = db.get_job(conn, job_id)
+        if job is None:
+            return jsonify({"ok": False, "message": f"Job {job_id} not found."}), 404
+        if job["status"] in (db.JOB_STATUS_SUCCEEDED, db.JOB_STATUS_FAILED,
+                             db.JOB_STATUS_CANCELLED, db.JOB_STATUS_EXHAUSTED):
+            return jsonify({
+                "ok": False,
+                "message": f"Job {job_id} is already terminal (status={job['status']})."
+            }), 409
+        db.cancel_job(conn, job_id, reason=reason)
+        conn.commit()
+    finally:
+        conn.close()
+    return jsonify({"ok": True, "job_id": job_id, "status": "cancelled", "reason": reason})
+
+
+@app.route("/api/execution/status")
+def api_execution_status():
+    """Phase 4 execution status summary — pending jobs, mode breakdown, cred check.
+
+    Returns a snapshot useful for the dashboard's execution panel:
+        {
+          "razorpay": { configured, reachable, authenticated, mode, error },
+          "jobs": { total, scheduled, succeeded, failed, exhausted, by_mode },
+          "execution_modes": { real_test_cases, simulation_cases }
+        }
+    No sensitive values are exposed.
+    """
+    # Credential probe (read-only, never raises).
+    creds = executor_module.verify_razorpay_credentials()
+
+    conn = db.get_connection()
+    try:
+        all_jobs = db.get_all_jobs(conn, limit=5000)
+    finally:
+        conn.close()
+
+    by_status: dict = {}
+    by_mode: dict = {}
+    for j in all_jobs:
+        s = j.get("status", "unknown")
+        m = j.get("execution_mode", "simulation")
+        by_status[s] = by_status.get(s, 0) + 1
+        by_mode[m] = by_mode.get(m, 0) + 1
+
+    return jsonify({
+        "razorpay": {
+            "configured":    creds.get("configured", False),
+            "reachable":     creds.get("reachable", False),
+            "authenticated": creds.get("authenticated", False),
+            "mode":          creds.get("mode", "unknown"),
+            "error":         creds.get("error"),
+        },
+        "jobs": {
+            "total":     len(all_jobs),
+            "scheduled": by_status.get(db.JOB_STATUS_SCHEDULED, 0),
+            "claimed":   by_status.get(db.JOB_STATUS_CLAIMED, 0),
+            "executing": by_status.get(db.JOB_STATUS_EXECUTING, 0),
+            "succeeded": by_status.get(db.JOB_STATUS_SUCCEEDED, 0),
+            "failed":    by_status.get(db.JOB_STATUS_FAILED, 0),
+            "exhausted": by_status.get(db.JOB_STATUS_EXHAUSTED, 0),
+            "cancelled": by_status.get(db.JOB_STATUS_CANCELLED, 0),
+            "by_mode":   by_mode,
+        },
+    })
+
+
+@app.route("/api/execution/verify-credentials")
+def api_execution_verify_credentials():
+    """Probe Razorpay Test Mode credentials live and return the result.
+
+    Makes a single lightweight read-only API call (GET /plans?count=1).
+    Never exposes the key values — only configured/reachable/authenticated booleans.
+    """
+    result = executor_module.verify_razorpay_credentials()
+    # Determine overall readiness.
+    result["ready_for_real_execution"] = (
+        result.get("configured", False) and result.get("authenticated", False)
+    )
+    return jsonify(result)
+
+
+@app.route("/api/cases/<customer_id>/jobs")
+def api_case_jobs(customer_id):
+    """Return all recovery jobs for a specific case.
+
+    Used by the case-detail drawer to show the full execution history
+    (attempt number, mode, outcome, Razorpay IDs, payment link URL).
+    """
+    conn = db.get_connection()
+    try:
+        case = db.get_case(conn, customer_id)
+        if case is None:
+            return jsonify({"error": "case not found"}), 404
+        jobs = db.get_jobs_for_case(conn, customer_id)
+    finally:
+        conn.close()
+    return jsonify({"customer_id": customer_id, "jobs": jobs})
+
+
 if __name__ == "__main__":
     db.init_db()
+    # Phase 4: reset any stale claimed jobs before serving (handles process restart).
+    try:
+        scheduler_module.reset_stale_claimed_jobs()
+    except Exception:
+        pass  # non-fatal on first boot before schema migration runs
     # The live agent run writes to mandate_rescue.db (and its -wal/-journal sidecars)
     # on every run. Flask's default "stat" reloader watches all files under the project,
     # so those writes were triggering a mid-run server restart that forcibly closed the
