@@ -7,6 +7,7 @@ from real mandate_failures / audit_log rows via metrics.py and baseline.py (N1).
 import json
 import logging
 import os
+import uuid
 
 # Load a local .env (project root) into os.environ so GROQ_API_KEY / WEBHOOK_SECRET
 # set there are picked up automatically. Optional: if python-dotenv isn't installed
@@ -21,15 +22,39 @@ try:
 except ImportError:
     pass
 
-from flask import Flask, jsonify, render_template, request, Response
+from flask import Flask, jsonify, render_template, request, Response, g
 
 # Configure root logging once so server-side diagnostics (e.g. the real reason an LLM
 # call failed inside llm_client._chat) are actually emitted instead of vanishing.
 # Level is overridable via LOG_LEVEL for quieter/noisier environments.
 logging.basicConfig(
     level=getattr(logging, os.environ.get("LOG_LEVEL", "INFO").upper(), logging.INFO),
-    format="%(asctime)s %(levelname)s %(name)s: %(message)s",
+    format="%(asctime)s %(levelname)s %(name)s [%(correlation_id)s]: %(message)s",
 )
+
+# Inject a per-request correlation_id into every log record so tracing a specific
+# webhook or agent run through the logs is straightforward. Guard with a sentinel so
+# importlib.reload() (used in tests) doesn't chain the factory multiple times,
+# which would cause infinite recursion.
+_CORRELATION_FACTORY_INSTALLED = "_mandate_rescue_correlation_factory"
+
+if not getattr(logging, _CORRELATION_FACTORY_INSTALLED, False):
+    _old_factory = logging.getLogRecordFactory()
+
+    def _record_factory(*args, **kwargs):
+        record = _old_factory(*args, **kwargs)
+        record.correlation_id = getattr(g, "correlation_id", "-") if _in_request_ctx() else "-"
+        return record
+
+    def _in_request_ctx():
+        try:
+            from flask import has_request_context
+            return has_request_context()
+        except Exception:
+            return False
+
+    logging.setLogRecordFactory(_record_factory)
+    setattr(logging, _CORRELATION_FACTORY_INSTALLED, True)
 
 import db
 import seed as seed_module
@@ -57,6 +82,9 @@ import audit_check as audit_module
 import chaos_test as chaos_module
 import security
 import razorpay_adapter
+# Phase 4: scheduler, execution service, Razorpay credential probe.
+import scheduler as scheduler_module
+import payment_executor as executor_module
 
 # Templates and static assets live in the sibling frontend/ folder.
 _PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -67,6 +95,10 @@ app = Flask(
     template_folder=os.path.join(_FRONTEND, "templates"),
     static_folder=os.path.join(_FRONTEND, "static"),
 )
+
+# Limit inbound request body size. Protects the webhook endpoint against oversized
+# payloads (a real Razorpay webhook is a few KB at most; 1 MB is very generous).
+app.config["MAX_CONTENT_LENGTH"] = 1 * 1024 * 1024  # 1 MB
 
 # Security: the ONLY filter fields the natural-language query endpoint will honor.
 # The LLM may return anything; every key is validated against this hardcoded set
@@ -92,7 +124,18 @@ ASK_FIELD_WHITELIST = frozenset({
 # for no security benefit. See backend/security.py for the key model.
 _PROTECTED_PATHS = frozenset({
     "/api/seed", "/api/run-agent", "/api/run-agent-stream", "/api/reset", "/api/simulate",
+    # These are read-only but trigger heavy compute (full DB scans, audit recomputation,
+    # or adversarial simulation suites). Gating them prevents unauthenticated abuse.
+    "/api/audit-check", "/api/chaos-test",
+    # Phase 4: scheduler worker trigger and job cancellation are mutating.
+    "/api/scheduler/run", "/api/scheduler/jobs/cancel",
 })
+
+
+@app.before_request
+def _assign_correlation_id():
+    """Assign a unique correlation ID to each request for log tracing."""
+    g.correlation_id = request.headers.get("X-Correlation-ID") or str(uuid.uuid4())[:8]
 
 
 @app.before_request
@@ -112,6 +155,34 @@ def _require_api_key_for_mutations():
     return None
 
 
+@app.after_request
+def _set_security_headers(response):
+    """Add security headers to every response.
+
+    CSP is scoped to same-origin + Google Fonts + jsDelivr CDN (Chart.js). The
+    policy blocks inline scripts except the small bootstrap snippet in index.html
+    (nonce-less for simplicity; a nonce would require per-request template rendering).
+    Adjust 'unsafe-inline' if you move all inline JS out to the static bundle.
+    """
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["X-Frame-Options"] = "DENY"
+    response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+    response.headers["Content-Security-Policy"] = (
+        "default-src 'self'; "
+        "script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; "
+        "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; "
+        "font-src 'self' https://fonts.gstatic.com; "
+        "img-src 'self' data:; "
+        "connect-src 'self'; "
+        "frame-ancestors 'none';"
+    )
+    # Echo the correlation ID in the response so clients/logs can pair them up.
+    cid = getattr(g, "correlation_id", None)
+    if cid:
+        response.headers["X-Correlation-ID"] = cid
+    return response
+
+
 @app.route("/api/_client-key")
 def api_client_key():
     """Same-origin bootstrap: hand the dashboard's own JS the current API key.
@@ -123,6 +194,12 @@ def api_client_key():
     from the server's own environment/log.
     """
     return jsonify({"api_key": security.get_api_key()})
+
+
+@app.errorhandler(413)
+def _request_too_large(e):
+    return jsonify({"ok": False, "error": "request_too_large",
+                    "message": "Request body exceeds the 1 MB limit."}), 413
 
 
 @app.route("/healthz")
@@ -233,6 +310,21 @@ def api_webhook_razorpay():
         db.insert_mandate_failure(conn, record)
         db.mark_webhook_event_processed(conn, event_id)
         conn.commit()
+    except Exception as exc:
+        # Any unhandled exception during persistence: roll back the entire operation
+        # so we leave no partial state. Log the real reason server-side; return a
+        # generic 500 so internal details aren't leaked to the caller.
+        try:
+            conn.rollback()
+        except Exception:
+            pass
+        app.logger.error(
+            "Webhook persistence error for event_id=%s customer_id=%s: %s",
+            payload.get("id", "unknown"), record.get("customer_id", "unknown"), exc,
+            exc_info=True,
+        )
+        return jsonify({"ok": False, "error": "internal_error",
+                        "message": "Webhook could not be persisted. Razorpay will retry."}), 500
     finally:
         conn.close()
 
@@ -540,7 +632,8 @@ def api_cases():
 
 @app.route("/api/cases/<customer_id>/audit")
 def api_case_audit(customer_id):
-    """Full audit trail for one case (R4/R7), plus the case summary + messages."""
+    """Full audit trail for one case (R4/R7), plus the case summary + messages +
+    state transition history."""
     conn = db.get_connection()
     try:
         case = db.get_case(conn, customer_id)
@@ -548,10 +641,12 @@ def api_case_audit(customer_id):
             return jsonify({"error": "case not found"}), 404
         summary = _case_summary(case)
         trail = db.get_audit_for_case(conn, customer_id)
+        transitions = db.get_state_transitions(conn, customer_id)
         msgs = llm_client.generate_message_variants(case)
     finally:
         conn.close()
-    return jsonify({"case": summary, "audit": trail, "messages": msgs})
+    return jsonify({"case": summary, "audit": trail,
+                    "transitions": transitions, "messages": msgs})
 
 
 @app.route("/api/cases/<customer_id>/explain")
@@ -588,6 +683,73 @@ def api_case_explain(customer_id):
     })
 
 
+@app.route("/api/cases/<customer_id>/replay", methods=["POST"])
+def api_case_replay(customer_id):
+    """Event Replay: re-process a stored case through the recovery pipeline.
+
+    This is a REAL reprocessing mechanism, not a UI animation. It runs the exact same
+    DiagnosisAgent → TriageAgent → StrategyAgent → CommunicationAgent pipeline on the
+    stored case. The full duplicate-protection chain applies: if the case already has
+    a terminal audit record (recovered / escalated / rejected), the pipeline logs a
+    webhook_duplicate event and returns without reprocessing — guaranteeing that replay
+    can never create duplicate recovery attempts or double-count revenue.
+
+    Returns the case's post-replay state plus its full audit trail so the caller can
+    compare before/after. Requires X-API-Key (same gate as /api/run-agent).
+
+    NOTE: replay changes real DB state (status, audit_log, state_transitions). It is
+    intended for internal developer/ops use, which is why it is API-key gated.
+    """
+    supplied = request.headers.get("X-API-Key")
+    if not security.is_valid_key(supplied):
+        return jsonify({"ok": False, "error": "unauthorized",
+                        "message": "X-API-Key required for case replay."}), 401
+
+    import random as _random
+    conn = db.get_connection()
+    try:
+        case = db.get_case(conn, customer_id)
+        if case is None:
+            return jsonify({"error": "case not found"}), 404
+
+        audit_before = db.get_audit_for_case(conn, customer_id)
+        was_terminal = any(
+            row.get("case_status_after") in ("recovered", "escalated", "rejected")
+            for row in audit_before
+        )
+
+        if not was_terminal:
+            # Case has not been processed yet — run through the pipeline.
+            policy = agent_module.PolicyParams(use_llm=False)
+            rng = _random.Random(agent_module.RUN_SEED)
+            pipeline = agent_module.RecoveryPipeline(conn, rng, policy=policy)
+            pipeline.process_case(dict(case))
+            conn.commit()
+
+        case_after = db.get_case(conn, customer_id)
+        audit_after = db.get_audit_for_case(conn, customer_id)
+        transitions = db.get_state_transitions(conn, customer_id)
+    except Exception as exc:
+        try:
+            conn.rollback()
+        except Exception:
+            pass
+        app.logger.error("Case replay error for %s: %s", customer_id, exc, exc_info=True)
+        return jsonify({"ok": False, "error": "internal_error",
+                        "message": "Replay failed. See server logs."}), 500
+    finally:
+        conn.close()
+
+    return jsonify({
+        "ok": True,
+        "customer_id": customer_id,
+        "was_already_terminal": was_terminal,
+        "case": _case_summary(case_after),
+        "audit": audit_after,
+        "transitions": transitions,
+    })
+
+
 @app.route("/api/cohorts")
 def api_cohorts():
     """Recovery-rate breakdown by tenure bucket and merchant_category (R10)."""
@@ -604,6 +766,30 @@ def api_exceptions():
 def api_rejected_webhooks():
     """Webhook events blocked at ingestion for failing HMAC signature verification."""
     return jsonify(metrics.rejected_webhooks())
+
+
+@app.route("/api/webhook-events")
+def api_webhook_events():
+    """All stored webhook_events rows (idempotency table), newest first.
+
+    Each row represents one distinct inbound webhook delivery, whether Razorpay-live
+    or injected via the demo script. Shows event_id, payload_hash, received_at,
+    processed state, customer_id, event_type, and rejected_reason (if any).
+    This is the real idempotency table — these are not fabricated for display.
+    """
+    try:
+        limit = int(request.args.get("limit", 100))
+    except (TypeError, ValueError):
+        limit = 100
+    limit = max(1, min(limit, 500))
+    conn = db.get_connection()
+    try:
+        rows = conn.execute(
+            "SELECT * FROM webhook_events ORDER BY id DESC LIMIT ?", (limit,)
+        ).fetchall()
+    finally:
+        conn.close()
+    return jsonify([dict(r) for r in rows])
 
 
 @app.route("/api/activity")
@@ -688,6 +874,14 @@ def api_ask():
     if not question:
         return jsonify({"ok": False, "reason": "empty",
                         "message": "Type a question, or click one of the examples."}), 200
+
+    # Security: cap question length to prevent large LLM prompt injection attempts.
+    # 500 chars is generous for any natural-language ops question while blocking
+    # prompt stuffing or token-flooding attacks.
+    _MAX_QUESTION_LEN = 500
+    if len(question) > _MAX_QUESTION_LEN:
+        return jsonify({"ok": False, "reason": "too_long",
+                        "message": f"Question must be {_MAX_QUESTION_LEN} characters or fewer."}), 200
 
     spec = llm_client.translate_query(question)
     if spec is None:
