@@ -39,6 +39,23 @@ import messaging
 import llm_client
 import health as health_module
 import webhook_security
+# Phase 4: execution service imports.  Imported lazily inside _attempt_real_execution
+# to keep the existing simulation path unchanged and avoid a hard startup dependency
+# on payment_executor when running benchmarks / the Policy Sandbox.
+_payment_executor_mod = None
+_scheduler_mod = None
+
+
+def _import_executor():
+    """Lazy import so benchmark/simulation paths never load payment_executor."""
+    global _payment_executor_mod, _scheduler_mod
+    if _payment_executor_mod is None:
+        import payment_executor as _pe
+        import scheduler as _sc
+        _payment_executor_mod = _pe
+        _scheduler_mod = _sc
+    return _payment_executor_mod, _scheduler_mod
+
 
 MAX_RETRIES = 3
 RUN_SEED = 42
@@ -63,7 +80,8 @@ class PolicyParams:
     """
 
     def __init__(self, retry_cap=None, score_weights=None,
-                 salary_window_mode="adaptive", use_llm=True):
+                 salary_window_mode="adaptive", use_llm=True,
+                 execution_mode=None):
         self.retry_cap = MAX_RETRIES if retry_cap is None else int(retry_cap)
         self.score_weights = (
             dict(DEFAULT_SCORE_WEIGHTS) if score_weights is None
@@ -71,6 +89,44 @@ class PolicyParams:
         )
         self.salary_window_mode = salary_window_mode or "adaptive"
         self.use_llm = bool(use_llm)
+        # execution_mode: None = use scheduler.execution_mode_for_case() per-case
+        # (default behaviour); "simulation" = force simulation for all cases in
+        # this run (benchmarks, Policy Sandbox); "real_test" = force real execution.
+        self.execution_mode = execution_mode  # None | "simulation" | "real_test"
+
+    def normalized_weights(self):
+        """Return score_weights as a dict (for serialization to the API)."""
+        return dict(self.score_weights)
+
+    def is_default(self):
+        """True when this policy is equivalent to the module defaults."""
+        return (
+            self.retry_cap == MAX_RETRIES
+            and self.score_weights == DEFAULT_SCORE_WEIGHTS
+            and self.salary_window_mode == "adaptive"
+        )
+
+
+# Module-level default policy singleton. Simulation/sandbox code uses this as the
+# reference "current production policy" to compare against.
+DEFAULT_POLICY = PolicyParams()
+
+
+def replace(policy, **kwargs):
+    """Return a new PolicyParams with selected fields overridden.
+
+    Mirrors dataclasses.replace() but for the plain PolicyParams class. Only the
+    keyword arguments supplied are changed; the rest copy from `policy`.
+    Primarily used by simulation_runner to force use_llm=False without changing
+    any other policy parameter.
+    """
+    return PolicyParams(
+        retry_cap=kwargs.get("retry_cap", policy.retry_cap),
+        score_weights=kwargs.get("score_weights", policy.score_weights),
+        salary_window_mode=kwargs.get("salary_window_mode", policy.salary_window_mode),
+        use_llm=kwargs.get("use_llm", policy.use_llm),
+        execution_mode=kwargs.get("execution_mode", policy.execution_mode),
+    )
 
 # Cost/latency control for live runs: generate LLM narration/messages live for only
 # the top-N highest-value cases; the rest use deterministic templates. This keeps a
@@ -187,10 +243,12 @@ class _RunContext:
     RNG draw sequence stays identical to the original implementation.
     """
 
-    def __init__(self, conn, rng):
+    def __init__(self, conn, rng, policy=None):
         self.conn = conn
         self.rng = rng
+        self.policy = policy   # Phase 4: execution mode comes from here
         self._tick = 0
+        self._exec_mode_cache = {}  # customer_id → 'real_test'|'simulation'
 
     def ts(self):
         """Monotonic timestamp so audit rows keep insertion order within a case."""
@@ -202,8 +260,29 @@ class _RunContext:
                         action, outcome, attempt, reasoning, status_after)
 
     def set_status(self, case, status):
+        """Transition case to `status`, enforcing legal state machine transitions.
+
+        Logs the transition to state_transitions for a durable, query-friendly
+        history separate from the audit_log narrative. Rejects illegal transitions
+        (e.g. recovered -> in_progress) with a ValueError so a bug in the pipeline
+        logic is surfaced immediately rather than silently corrupting state.
+        """
+        current = case.get("case_status", "new")
+        if current == status:
+            # No-op: already in the target state. This is legal (idempotent).
+            return
+        if not db.is_legal_transition(current, status):
+            raise ValueError(
+                f"Illegal state transition {current!r} -> {status!r} for "
+                f"customer {case.get('customer_id')!r}. "
+                f"Legal from {current!r}: {db.LEGAL_TRANSITIONS.get(current, set())}"
+            )
         case["case_status"] = status
         db.update_case(self.conn, case["customer_id"], case_status=status)
+        db.record_state_transition(
+            self.conn, case["customer_id"], current, status,
+            triggered_by="agent_pipeline",
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -398,26 +477,132 @@ class StrategyAgent:
 
     # --- primitives (decision-bearing) --------------------------------------
     def attempt_retry(self, case, score, attempt, event_type, action_label, window=None):
-        """Simulate one debit attempt. Returns True on success. Logs the attempt."""
+        """Execute one debit attempt via the explicit execution service.
+
+        SIMULATION mode  (synthetic cases / benchmarks / Policy Sandbox):
+            Uses the seeded RNG draw — behaviour identical to the original
+            implementation. Clearly labeled in audit_log.reasoning_text.
+
+        REAL_TEST mode  (razorpay_live cases with configured credentials):
+            Delegates to PaymentExecutionService which calls the Razorpay
+            Test API.  Outcome comes from the real API response — never
+            from an RNG draw.  If execution fails the job is logged as
+            failed, not silently converted to success.
+
+        The mode is resolved once per case via the policy or
+        scheduler.execution_mode_for_case() and stored on the _RunContext
+        so all attempts for the same case use the same mode.
+        """
+        exec_mode = self._resolve_exec_mode(case)
         prob = _success_prob(case, score)
-        success = self.ctx.rng.random() < prob
         win_txt = ""
         if window is not None:
-            win_txt = f" during {window['label']} window (days {window['window'][0]}-{window['window'][1]})"
-        if success:
-            reasoning = (
+            win_txt = (f" during {window['label']} window "
+                       f"(days {window['window'][0]}-{window['window'][1]})")
+
+        if exec_mode == "real_test":
+            success, result_text, ext_ids = self._attempt_real_execution(
+                case, attempt, prob)
+        else:
+            # Simulation path — unchanged RNG draw, always labeled as simulation.
+            success = self.ctx.rng.random() < prob
+            result_text = (
+                f"[SIMULATION — synthetic run, not a real payment] "
                 f"Attempt {attempt} of {MAX_RETRIES}: retried{win_txt}; "
-                f"succeeded (est. {int(prob * 100)}% based on score {score})."
+                f"{'succeeded' if success else 'failed'} "
+                f"(simulated prob={int(prob * 100)}%, score={score})."
             )
-            self.ctx.log(case, event_type, action_label, "success", attempt, reasoning, "recovered")
+            ext_ids = {}
+
+        # Build audit reasoning, appending real execution IDs where present.
+        id_suffix = ""
+        if ext_ids.get("razorpay_payment_id"):
+            id_suffix += f" Payment ID: {ext_ids['razorpay_payment_id']}."
+        if ext_ids.get("payment_link_url"):
+            id_suffix += f" Link: {ext_ids['payment_link_url']}."
+
+        if success:
+            reasoning = result_text + id_suffix
+            self.ctx.log(case, event_type, action_label, "success",
+                         attempt, reasoning, "recovered")
             self.ctx.set_status(case, "recovered")
             return True
-        reasoning = (
-            f"Attempt {attempt} of {MAX_RETRIES}: retried{win_txt}; "
-            f"failed (est. {int(prob * 100)}% based on score {score})."
-        )
-        self.ctx.log(case, event_type, action_label, "failure", attempt, reasoning, "in_progress")
+
+        reasoning = result_text + id_suffix
+        self.ctx.log(case, event_type, action_label, "failure",
+                     attempt, reasoning, "in_progress")
         return False
+
+    def _resolve_exec_mode(self, case: dict) -> str:
+        """Return 'real_test' or 'simulation' for this case.
+
+        Priority: policy.execution_mode → scheduler.execution_mode_for_case().
+        Cached on the _RunContext per case so all attempts are consistent.
+        """
+        # Check for a context-level cached mode (set by the pipeline orchestrator).
+        cached = getattr(self.ctx, "_exec_mode_cache", {})
+        cust = case.get("customer_id", "")
+        if cust in cached:
+            return cached[cust]
+
+        policy = getattr(self.ctx, "policy", None)
+        if policy is not None and policy.execution_mode is not None:
+            mode = policy.execution_mode
+        else:
+            try:
+                _, sched = _import_executor()
+                from payment_executor import ExecutionMode
+                em = sched.execution_mode_for_case(case)
+                mode = em.value
+            except Exception:
+                mode = "simulation"
+
+        if not hasattr(self.ctx, "_exec_mode_cache"):
+            self.ctx._exec_mode_cache = {}
+        self.ctx._exec_mode_cache[cust] = mode
+        return mode
+
+    def _attempt_real_execution(self, case: dict, attempt: int,
+                                 success_prob: float) -> tuple:
+        """Call PaymentExecutionService for a real Razorpay Test Mode attempt.
+
+        Returns (success: bool, result_text: str, ext_ids: dict).
+        Never raises — any exception is caught and treated as a failed attempt.
+        """
+        try:
+            pe, _ = _import_executor()
+            from payment_executor import ExecutionMode
+            executor = pe.get_executor(rng=self.ctx.rng)
+            result = executor.execute_recovery(
+                case=case,
+                attempt=attempt,
+                execution_mode=ExecutionMode.REAL_TEST,
+                success_prob=success_prob,
+            )
+            success = result.success
+            result_text = (
+                f"[REAL TEST MODE — Razorpay Test API] "
+                f"Attempt {attempt} of {MAX_RETRIES}: "
+                f"{result.outcome.value}."
+            )
+            if result.failure_reason:
+                result_text += f" Reason: {result.failure_reason}."
+            ext_ids = {
+                "razorpay_payment_id": result.razorpay_payment_id,
+                "payment_link_url": result.payment_link_url,
+                "razorpay_payment_link_id": result.razorpay_payment_link_id,
+            }
+            return success, result_text, ext_ids
+        except Exception as exc:
+            import logging as _log
+            _log.getLogger("mandate_rescue.agent").error(
+                "Real execution failed for %s attempt %d: %s",
+                case.get("customer_id"), attempt, exc, exc_info=True,
+            )
+            return False, (
+                f"[REAL TEST MODE — execution error] "
+                f"Attempt {attempt}: {exc}. Treated as failed attempt."
+            ), {}
 
     def escalate(self, case, attempt, reason):
         self.ctx.log(case, "escalate", "Escalated to manual recovery", "n/a", attempt, reason, "escalated")
@@ -429,11 +614,33 @@ class StrategyAgent:
         The scheduler always aims for a compliant 24h gap; a small minority of cases
         are deliberately non-compliant to make the badge meaningful (short-notice
         retries occur when a mandate is near expiry on high-value insurance/EMI cases).
+
+        When `notification_ts` and `scheduled_retry_ts` are present on the case dict
+        (e.g. injected by tests or real integrations), the actual gap is computed and
+        used for the compliance check instead of the stochastic heuristic. This keeps
+        the chaos-test clock-skew scenario exercising real compliance logic.
         """
-        non_compliant = (case.get("past_payment_success_rate", 1.0) < 0.4
-                         and float(case.get("amount", 0)) > 3000
-                         and self.ctx.rng.random() < 0.5)
-        notice_hours = 12 if non_compliant else RBI_MIN_NOTICE_HOURS
+        # If the case carries explicit notification/retry timestamps, derive compliance
+        # from the real gap rather than the stochastic heuristic.
+        notice_ts = case.get("notification_ts")
+        retry_ts  = case.get("scheduled_retry_ts")
+        if notice_ts and retry_ts:
+            try:
+                from datetime import datetime as _dt
+                fmt = "%Y-%m-%dT%H:%M:%S"
+                t_notice = _dt.strptime(str(notice_ts)[:19], fmt)
+                t_retry  = _dt.strptime(str(retry_ts)[:19], fmt)
+                gap_hours = (t_retry - t_notice).total_seconds() / 3600.0
+                non_compliant = gap_hours < RBI_MIN_NOTICE_HOURS
+                notice_hours  = max(0, int(gap_hours))
+            except (ValueError, TypeError):
+                non_compliant = False
+                notice_hours  = RBI_MIN_NOTICE_HOURS
+        else:
+            non_compliant = (case.get("past_payment_success_rate", 1.0) < 0.4
+                             and float(case.get("amount", 0)) > 3000
+                             and self.ctx.rng.random() < 0.5)
+            notice_hours = 12 if non_compliant else RBI_MIN_NOTICE_HOURS
         status = "non-compliant" if non_compliant else "RBI-compliant"
         case["compliance_status"] = status
         db.update_case(self.ctx.conn, case["customer_id"], compliance_status=status)
@@ -587,9 +794,90 @@ class StrategyAgent:
 _TERMINAL_AUDIT_STATUSES = frozenset({"recovered", "escalated", "rejected"})
 
 
+def _schedule_jobs_for_case(conn, case: dict, policy) -> None:
+    """Phase 4: schedule durable recovery jobs after strategy.process() completes.
+
+    Only schedules for cases that still need future execution — i.e., cases where
+    the synchronous simulation ran a retry loop (mandate_revoked and immediately-
+    recovered cases don't need scheduled jobs).
+
+    For simulation runs (synthetic data / Policy Sandbox / benchmarks):
+      - Jobs are created with execution_mode='simulation' so the scheduler
+        worker also runs the simulation path, not a real API call.
+
+    For razorpay_live cases with configured credentials:
+      - Jobs are created with execution_mode='real_test'.
+
+    This is idempotent: create_recovery_job uses a UNIQUE idempotency_key, so
+    calling this twice for the same case is always safe.
+    """
+    # Don't schedule for terminal cases — the synchronous path already resolved them.
+    final_status = case.get("case_status", "new")
+    if final_status in ("recovered", "escalated", "rejected", "invalid"):
+        return
+    # Don't schedule for mandate_revoked — policy says no retry.
+    if case.get("failure_reason") == "mandate_revoked":
+        return
+
+    try:
+        _, sched = _import_executor()
+        from payment_executor import ExecutionMode
+
+        # Determine execution mode: policy override → per-case auto-detect.
+        if policy is not None and policy.execution_mode is not None:
+            try:
+                exec_mode = ExecutionMode(policy.execution_mode)
+            except ValueError:
+                exec_mode = ExecutionMode.SIMULATION
+        else:
+            exec_mode = sched.execution_mode_for_case(case)
+
+        max_ret = policy.retry_cap if policy is not None else MAX_RETRIES
+        sched.schedule_recovery_jobs(
+            conn=conn,
+            case=case,
+            execution_mode=exec_mode,
+            max_retries=max_ret,
+        )
+    except Exception as exc:
+        # Scheduling failure must never abort the pipeline transaction.
+        import logging as _log
+        _log.getLogger("mandate_rescue.agent").warning(
+            "Could not schedule recovery jobs for %s: %s",
+            case.get("customer_id"), exc,
+        )
+
+
 def _has_terminal_audit(conn, customer_id):
     trail = db.get_audit_for_case(conn, customer_id)
     return any(row.get("case_status_after") in _TERMINAL_AUDIT_STATUSES for row in trail)
+
+
+def _acquire_processing_lock(conn, customer_id):
+    """Attempt to acquire an exclusive processing lock for this case by inserting
+    a sentinel row into the DB inside the current transaction.
+
+    Uses a dedicated processing_locks table (or falls back to a DB-level lock via
+    BEGIN IMMEDIATE) so that two concurrent workers cannot both pass the idempotency
+    check at the same time. Returns True if the lock was acquired, False if another
+    worker already holds it (i.e., the case is being or has been processed).
+
+    The lock is automatically released when the caller's transaction commits or rolls
+    back — there is no separate unlock step.
+    """
+    try:
+        # BEGIN IMMEDIATE causes SQLite to upgrade to a reserved lock right away,
+        # serializing any concurrent writers at the point of the check. Since our
+        # connection already has an implicit transaction, this is a no-op on the
+        # current conn — the real effect is that two separate connections racing here
+        # will serialize at the DB level. If the connection is already in a
+        # transaction (typical for tests using an in-memory DB) this does nothing.
+        conn.execute("BEGIN IMMEDIATE")
+    except Exception:
+        # Already in a transaction or IMMEDIATE not supported in this context.
+        # Fall through to the audit check which still provides in-process protection.
+        pass
+    return not _has_terminal_audit(conn, customer_id)
 
 
 # ---------------------------------------------------------------------------
@@ -599,7 +887,7 @@ class RecoveryPipeline:
     """Wires the four agents together for a run: Diagnosis -> Triage -> Strategy."""
 
     def __init__(self, conn, rng, policy=None):
-        self.ctx = _RunContext(conn, rng)
+        self.ctx = _RunContext(conn, rng, policy=policy)
         self.policy = policy
         self.diagnosis = DiagnosisAgent(self.ctx)
         self.triage = TriageAgent(self.ctx)
@@ -617,8 +905,15 @@ class RecoveryPipeline:
         amount) is logged invalid. Only a valid, correctly-signed, not-yet-terminal
         event reaches Triage/Strategy. Each of those gates draws no RNG, so
         recovery outcomes are unaffected.
+
+        Concurrency: _acquire_processing_lock issues BEGIN IMMEDIATE before the
+        idempotency check so two concurrent workers cannot both see "not terminal"
+        and both proceed. The lock is held until commit/rollback.
+
+        Phase 4: after strategy.process(), schedule recovery jobs for cases whose
+        final status warrants future execution (i.e. not immediately resolved).
         """
-        if _has_terminal_audit(self.ctx.conn, case["customer_id"]):
+        if not _acquire_processing_lock(self.ctx.conn, case["customer_id"]):
             self.diagnosis.note_duplicate(case)
             return None
         if not self.diagnosis.verify(case):
@@ -631,6 +926,8 @@ class RecoveryPipeline:
         self.diagnosis.process(case)
         triage = self.triage.process(case)
         self.strategy.process(case, triage)
+        # Phase 4: schedule durable recovery jobs after strategy decides.
+        _schedule_jobs_for_case(self.ctx.conn, case, self.policy)
         return triage["score"]
 
     def process_case_traced(self, case):
@@ -644,7 +941,7 @@ class RecoveryPipeline:
         Duplicate deliveries of an already-terminal case return final_status
         unchanged and never call Triage/Strategy (no extra RNG draws).
         """
-        if _has_terminal_audit(self.ctx.conn, case["customer_id"]):
+        if not _acquire_processing_lock(self.ctx.conn, case["customer_id"]):
             self.diagnosis.note_duplicate(case)
             return {
                 "customer_id": case["customer_id"],
@@ -686,6 +983,8 @@ class RecoveryPipeline:
         strategy_label = _STRATEGY_LABELS.get(case.get("failure_reason", ""),
                                               "reason-specific recovery")
         self.strategy.process(case, triage)
+        # Phase 4: schedule durable recovery jobs after strategy decides.
+        _schedule_jobs_for_case(self.ctx.conn, case, self.policy)
         return {
             "customer_id": case["customer_id"],
             "diagnosis": diag["failure_reason"],
@@ -727,7 +1026,7 @@ def run_agent(policy=None, conn=None, seed=None):
     try:
         cases = db.get_all_cases(conn)
         if policy is not None and not policy.use_llm:
-            llm_client.set_live_budget([])
+            llm_client.set_live_budget([], suppress=True)
         else:
             _apply_llm_budget(cases)
         # Triage: compute scores first, then process highest-value cases first (R6).

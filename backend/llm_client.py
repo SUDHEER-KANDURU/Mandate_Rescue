@@ -33,13 +33,16 @@ log = logging.getLogger("mandate_rescue.llm")
 
 # --- Configuration ----------------------------------------------------------
 
-# OpenAI-compatible endpoint. Groq's default is the one below; override via env to
+# OpenAI-compatible endpoint. Groq's default is the one below; override via env t
 # point at any OpenAI-compatible server (e.g. OpenAI itself) without code changes.
 API_BASE = os.environ.get("LLM_API_BASE", "https://api.groq.com/openai/v1")
 API_URL = API_BASE.rstrip("/") + "/chat/completions"
 
 # A fast, inexpensive instruct model is plenty for one-paragraph narration.
-# gpt-oss-20b is a small, current Groq model; override via LLM_MODEL if desired.
+# openai/gpt-oss-20b is the standard fast model available on GroqCloud.
+# Override via LLM_MODEL env var to point at any OpenAI-compatible model
+# (e.g. LLM_MODEL=gpt-4o-mini for OpenAI, LLM_MODEL=llama-3.3-70b-versatile
+# for accounts with Llama access).
 MODEL = os.environ.get("LLM_MODEL", "openai/gpt-oss-20b")
 
 # Short timeout: this is decoration on top of a working system, so we would rather
@@ -92,25 +95,30 @@ def clear_cache():
     _CACHE.clear()
 
 
-# --- Live-generation budget (cost/latency control) --------------------------
-# Against a real remote LLM, generating narration for every one of the 180 cases in
-# a single live run can blow the demo's latency budget. So the agent marks a small
-# set of "interesting" cases (the highest-value ones) for live LLM narration and
-# lets the rest use the deterministic templates. This is a deliberate cost/latency
-# decision, documented in the README. An empty budget (the default) means "no
-# restriction" -- every case may use the LLM (used by the drawer/ask endpoints).
-_LIVE_BUDGET = set()
+
+_LIVE_BUDGET = None     # None = no restriction; set() = suppress all
+_SUPPRESS_LLM = False   # set by set_live_budget([], suppress=True)
 
 
-def set_live_budget(case_ids):
-    """Restrict live LLM generation to these case_ids (empty/None = no restriction)."""
-    global _LIVE_BUDGET
-    _LIVE_BUDGET = set(case_ids or [])
+def set_live_budget(case_ids, suppress=False):
+    """Restrict live LLM generation.
+
+    - case_ids=None, suppress=False: no restriction — every case may use the LLM
+      (default, used by drawer/ask endpoints).
+    - case_ids=<iterable>, suppress=False: only these case_ids may use the LLM.
+    - suppress=True (regardless of case_ids): suppress ALL LLM calls — every call
+      falls back to templates. Used by benchmark / Monte Carlo runs.
+    """
+    global _LIVE_BUDGET, _SUPPRESS_LLM
+    _SUPPRESS_LLM = suppress
+    _LIVE_BUDGET = None if case_ids is None else set(str(c) for c in case_ids)
 
 
 def _llm_allowed(case_id):
     """True if this case may hit the live LLM (always true when no budget is set)."""
-    return (not _LIVE_BUDGET) or (str(case_id) in _LIVE_BUDGET)
+    if _SUPPRESS_LLM:
+        return False
+    return (_LIVE_BUDGET is None) or (str(case_id) in _LIVE_BUDGET)
 
 
 def _cache_key(case_id, kind, *extra):
