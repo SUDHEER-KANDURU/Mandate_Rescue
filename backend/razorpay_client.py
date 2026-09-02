@@ -119,3 +119,107 @@ def fetch_subscription(subscription_id):
 def cancel_subscription(subscription_id, cancel_at_cycle_end=False):
     return _request("POST", f"/subscriptions/{subscription_id}/cancel",
                     {"cancel_at_cycle_end": 1 if cancel_at_cycle_end else 0})
+
+
+# ---------------------------------------------------------------------------
+# Phase 4: Recovery execution operations
+# ---------------------------------------------------------------------------
+
+def fetch_payment(payment_id):
+    """Fetch a single payment entity by Razorpay payment_id (pay_xxx).
+
+    Used by the executor to verify a payment's current status and amount
+    before deciding whether recovery already succeeded externally.
+    """
+    return _request("GET", f"/payments/{payment_id}")
+
+
+def capture_payment(payment_id, amount_rupees, currency="INR"):
+    """Capture an authorized payment.
+
+    Razorpay payments start in 'authorized' state; capture moves them to
+    'captured' (funds settled). Idempotent: capturing an already-captured
+    payment returns a 400 with 'BAD_REQUEST_ERROR' / 'payment_already_captured'.
+    Amount must equal the original authorized amount.
+
+    Args:
+        payment_id: Razorpay payment id (pay_xxx).
+        amount_rupees: amount to capture in rupees (converted to paise internally).
+        currency: must match the original payment currency; defaults to "INR".
+    Returns:
+        The Razorpay payment entity dict.
+    Raises:
+        RazorpayClientError on network, auth, or API errors.
+    """
+    body = {
+        "amount": int(round(amount_rupees * 100)),
+        "currency": currency,
+    }
+    return _request("POST", f"/payments/{payment_id}/capture", body)
+
+
+def list_payments_for_subscription(subscription_id, count=10, skip=0):
+    """List recent payments associated with a subscription.
+
+    Returns a dict with 'count' and 'items' (list of payment entities).
+    Used by the executor to find the most recent payment attempt for a
+    subscription so we know its current status before acting.
+
+    Note: Razorpay's pagination uses `count` (max 100) and `skip` (offset).
+    """
+    path = f"/payments?subscription_id={subscription_id}&count={count}&skip={skip}"
+    return _request("GET", path)
+
+
+def create_payment_link(amount_rupees, customer_email=None, customer_contact=None,
+                        description=None, notes=None, expire_by_unix=None):
+    """Create a Razorpay Payment Link for mandate recovery nudges.
+
+    Used when the mandate has expired or the limit must be raised — we send the
+    customer a payment link they can complete to trigger re-authorization.
+    Returns the payment link entity including the short_url for delivery.
+
+    Args:
+        amount_rupees: link amount in rupees.
+        customer_email: pre-fills the email field on the hosted page.
+        customer_contact: pre-fills the phone number (e.g. '+919876543210').
+        description: visible to the customer on the hosted page.
+        notes: dict of merchant metadata echoed in webhooks.
+        expire_by_unix: optional Unix timestamp for link expiry.
+    Returns:
+        Razorpay payment link entity dict including 'short_url'.
+    """
+    body = {
+        "amount": int(round(amount_rupees * 100)),
+        "currency": "INR",
+        "description": description or "Mandate recovery — please complete this payment",
+    }
+    if customer_email or customer_contact:
+        body["customer"] = {}
+        if customer_email:
+            body["customer"]["email"] = customer_email
+        if customer_contact:
+            body["customer"]["contact"] = customer_contact
+    if notes:
+        body["notes"] = dict(notes)
+    if expire_by_unix:
+        body["expire_by"] = int(expire_by_unix)
+    return _request("POST", "/payment_links", body)
+
+
+def fetch_payment_link(payment_link_id):
+    """Fetch a payment link by its Razorpay id (plink_xxx)."""
+    return _request("GET", f"/payment_links/{payment_link_id}")
+
+
+def credentials_configured():
+    """Return True if RAZORPAY_KEY_ID / RAZORPAY_KEY_SECRET look like real keys.
+
+    Used by the executor and app to decide at runtime whether real execution
+    is available without raising an exception.
+    """
+    try:
+        _credentials()
+        return True
+    except RazorpayClientError:
+        return False

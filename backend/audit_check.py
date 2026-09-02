@@ -142,12 +142,21 @@ def check_rejected_isolation(cases, audit_by_case):
 # --- Rule 5 -----------------------------------------------------------------
 def check_over_limit_reauth(cases, audit_by_case):
     """amount > mandate_limit cases must route through re-authorization, never a
-    normal salary-window / silent-retry strategy."""
+    normal salary-window / silent-retry strategy.
+
+    Exception: mandate_revoked cases are immediately escalated via the revoked-mandate
+    path (which fires before the mandate-limit gate in StrategyAgent), so they never
+    log a mandate_limit_block event. This is correct behavior, not a violation.
+    """
     violations = []
     for c in cases:
         # Rejected/invalid cases never entered the pipeline; skip (Rule 4 and the
         # ingestion validation gate cover them).
         if c["case_status"] in ("rejected", "invalid"):
+            continue
+        # mandate_revoked cases are immediately escalated before the mandate-limit
+        # gate fires — no mandate_limit_block event is expected for them.
+        if c.get("failure_reason") == "mandate_revoked":
             continue
         amount = float(c["amount"])
         limit = float(c.get("mandate_limit") or 5000)
@@ -181,13 +190,27 @@ def check_over_limit_reauth(cases, audit_by_case):
 
 
 # --- Rule 6 -----------------------------------------------------------------
+
+# Statuses excluded from money aggregates in metrics.core_metrics() — must stay in
+# sync with metrics.NON_PIPELINE_STATUSES. Duplicated here (rather than imported) so
+# the audit module is self-contained and won't silently pass if metrics.py drifts.
+_NON_PIPELINE_STATUSES = frozenset({"invalid", "duplicate"})
+
+
 def check_money_figures(conn):
-    """Independently recompute rupee figures and compare to metrics.core_metrics()."""
+    """Independently recompute rupee figures and compare to metrics.core_metrics().
+
+    Uses the SAME exclusion set as metrics.core_metrics() (invalid + duplicate cases
+    are excluded from amount_at_risk) so the figures always agree — previously this
+    included ALL cases, causing a latent mismatch whenever invalid cases were present.
+    """
     violations = []
     cases = db.get_all_cases(conn)
-    recomputed_at_risk = round(sum(float(c["amount"]) for c in cases), 2)
+    # Mirror metrics.core_metrics(): exclude invalid/duplicate from money totals.
+    pipeline_cases = [c for c in cases if c["case_status"] not in _NON_PIPELINE_STATUSES]
+    recomputed_at_risk = round(sum(float(c["amount"]) for c in pipeline_cases), 2)
     recomputed_recovered = round(
-        sum(float(c["amount"]) for c in cases if c["case_status"] == "recovered"), 2)
+        sum(float(c["amount"]) for c in pipeline_cases if c["case_status"] == "recovered"), 2)
 
     reported = metrics_module.core_metrics(conn)
     checks = [
