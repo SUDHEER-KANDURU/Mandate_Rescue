@@ -1,0 +1,41 @@
+# Version control
+.git
+.gitignore
+
+# Secrets — never bake into the image
+.env
+
+# Runtime database (bind-mounted by docker-compose instead)
+mandate_rescue.db
+mandate_rescue.db-wal
+mandate_rescue.db-shm
+mandate_rescue.db-journal
+
+# Generated ML artifacts (regenerated at runtime / build time)
+backend/ml/model.pkl
+backend/ml/training_data.csv
+backend/ml/metrics.json
+
+# Dev / probe scripts (not part of the app)
+scripts/dev/
+
+# Python cache and test artifacts
+__pycache__/
+**/__pycache__/
+*.py[cod]
+.pytest_cache/
+*.egg-info/
+.venv/
+venv/
+env/
+
+# Editor / OS
+.DS_Store
+Thumbs.db
+*.swp
+.vscode/
+.idea/
+
+# CI artifacts
+.github/
+AUDIT_AND_UPGRADE_PLAN.md

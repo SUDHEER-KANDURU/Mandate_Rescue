@@ -6,17 +6,35 @@ services:
     environment:
       - LOG_LEVEL=INFO
     # Loads secrets/config from a local .env (not committed — see .env.example).
-    # If you don't have a .env yet, copy .env.example to .env first, or comment
-    # this out and pass -e flags manually.
+    # Required env vars: WEBHOOK_SECRET, MANDATE_RESCUE_API_KEY.
+    # Optional: GROQ_API_KEY (without it, falls back to template narration).
+    # Run: cp .env.example .env  and fill in secrets before starting.
     env_file:
       - .env
     volumes:
       # Keep the SQLite database on the host so `docker compose down` doesn't wipe
-      # demo data. Matches the on-disk path db.py computes at the project root.
+      # demo data. The init_db service below creates the file (not directory) before
+      # the main service starts — Docker would create a directory if the file
+      # doesn't exist, which breaks SQLite.
       - ./mandate_rescue.db:/app/mandate_rescue.db
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:5000/healthz"]
       interval: 30s
       timeout: 5s
       retries: 3
-      start_period: 10s
+      start_period: 15s
+    depends_on:
+      init_db:
+        condition: service_completed_successfully
+
+  # One-shot: ensure mandate_rescue.db exists as an empty FILE before the main
+  # service starts. Uses the same image so no extra pull is needed.
+  # The app's own db.init_db() call on first request creates all tables.
+  init_db:
+    build: .
+    user: root
+    volumes:
+      - ./mandate_rescue.db:/app/mandate_rescue.db
+    entrypoint: ["sh", "-c", "test -f /app/mandate_rescue.db || touch /app/mandate_rescue.db"]
+    env_file:
+      - .env
