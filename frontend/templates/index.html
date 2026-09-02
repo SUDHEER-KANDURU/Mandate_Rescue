@@ -1,4 +1,4 @@
-<!doctype html>
+﻿<!doctype html>
 <html lang="en">
 <head>
   <meta charset="utf-8">
@@ -8,541 +8,1013 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
-  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"
+          integrity="sha384-9nhczxUqK87bcKHh20fSQcTGD4qq5GhayNYSYWqwBkINBhOfQLg/P5HG5lF1urn4"
+          crossorigin="anonymous"></script>
 </head>
 <body>
-  <!-- Persistent header across all sections -->
-  <header class="topbar page-header">
-    <div class="brand">
-      <span class="logo">MR</span>
-      <div>
-        <h1>Mandate Rescue</h1>
-        <p class="tagline">AI recovery for failed UPI Autopay &amp; e-mandate debits</p>
+
+<!-- ================================================================
+     APP SHELL — fixed left sidebar + fixed top header + scrolling content
+     ================================================================ -->
+<div class="app-shell">
+
+  <!-- ============================================================
+       SIDEBAR
+       ============================================================ -->
+  <nav class="sidebar" id="sidebar" aria-label="Primary navigation">
+
+    <!-- Logo -->
+    <div class="sidebar-logo">
+      <div class="sidebar-logo-mark" aria-hidden="true">
+        <!-- Lightning bolt SVG -->
+        <svg viewBox="0 0 20 20" xmlns="http://www.w3.org/2000/svg">
+          <path d="M11 2L3 12h7l-1 6 9-10h-7l1-6z"/>
+        </svg>
+      </div>
+      <div class="sidebar-logo-text">
+        <span class="sidebar-logo-name">Mandate Rescue</span>
+        <span class="sidebar-logo-tagline">UPI Autopay Recovery</span>
       </div>
     </div>
-    <div class="actions">
-      <button id="btn-theme" class="btn btn-ghost btn-icon" title="Toggle light / dark theme" aria-label="Toggle light or dark theme">
-        <span id="theme-icon" aria-hidden="true">☾</span>
-      </button>
-      <button id="btn-help" class="btn btn-ghost btn-icon" title="Keyboard shortcuts (press ?)" aria-label="Show keyboard shortcuts">?</button>
-      <button id="btn-reset" class="btn btn-ghost" title="Re-seed fresh data and clear the previous run">Reset demo</button>
-      <button id="btn-run" class="btn btn-primary primary">Run agent</button>
-      <a id="btn-export" class="btn btn-ghost" href="/api/export">Download summary</a>
+
+    <!-- Scrollable nav -->
+    <div class="sidebar-nav">
+
+      <!-- Main -->
+      <div class="nav-section">
+        <div class="nav-section-label">Main</div>
+        <ul class="nav-list">
+          <li>
+            <button class="nav-item active" data-view="overview" aria-current="page">
+              <span class="nav-ico" aria-hidden="true">
+                <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+                  <rect x="1" y="1" width="6" height="6" rx="1.5" fill="currentColor" opacity=".9"/>
+                  <rect x="9" y="1" width="6" height="6" rx="1.5" fill="currentColor" opacity=".6"/>
+                  <rect x="1" y="9" width="6" height="6" rx="1.5" fill="currentColor" opacity=".6"/>
+                  <rect x="9" y="9" width="6" height="6" rx="1.5" fill="currentColor" opacity=".3"/>
+                </svg>
+              </span>
+              <span class="nav-label">Overview</span>
+            </button>
+          </li>
+          <li>
+            <button class="nav-item" data-view="cases">
+              <span class="nav-ico" aria-hidden="true">
+                <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+                  <path d="M2 4h12M2 8h8M2 12h10" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+                </svg>
+              </span>
+              <span class="nav-label">Cases</span>
+            </button>
+          </li>
+          <li>
+            <button class="nav-item" data-view="compliance">
+              <span class="nav-ico" aria-hidden="true">
+                <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+                  <path d="M8 1.5L2 4v4c0 3.31 2.57 6.41 6 7 3.43-.59 6-3.69 6-7V4L8 1.5z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/>
+                  <path d="M5.5 8l1.8 1.8L10.5 6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+                </svg>
+              </span>
+              <span class="nav-label">Compliance</span>
+            </button>
+          </li>
+          <li>
+            <button class="nav-item" data-view="ml">
+              <span class="nav-ico" aria-hidden="true">
+                <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+                  <circle cx="4" cy="8" r="2" stroke="currentColor" stroke-width="1.5"/>
+                  <circle cx="12" cy="4" r="2" stroke="currentColor" stroke-width="1.5"/>
+                  <circle cx="12" cy="12" r="2" stroke="currentColor" stroke-width="1.5"/>
+                  <path d="M6 7.5l4-2.5M6 8.5l4 2.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/>
+                </svg>
+              </span>
+              <span class="nav-label">ML Insights</span>
+            </button>
+          </li>
+        </ul>
+      </div>
+
+      <!-- Tools -->
+      <div class="nav-section">
+        <div class="nav-section-label">Tools</div>
+        <ul class="nav-list">
+          <li>
+            <button class="nav-item" data-view="sandbox">
+              <span class="nav-ico" aria-hidden="true">
+                <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+                  <circle cx="8" cy="8" r="2.5" stroke="currentColor" stroke-width="1.5"/>
+                  <path d="M8 1v2M8 13v2M1 8h2M13 8h2M3.05 3.05l1.42 1.42M11.53 11.53l1.42 1.42M3.05 12.95l1.42-1.42M11.53 4.47l1.42-1.42" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/>
+                </svg>
+              </span>
+              <span class="nav-label">Policy Sandbox</span>
+            </button>
+          </li>
+          <li>
+            <button class="nav-item" data-view="chaos">
+              <span class="nav-ico" aria-hidden="true">
+                <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+                  <path d="M9.5 1.5L5 9h5L5.5 14.5 13 6.5H8L9.5 1.5z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/>
+                </svg>
+              </span>
+              <span class="nav-label">Chaos Suite</span>
+            </button>
+          </li>
+          <li>
+            <button class="nav-item" data-view="replay">
+              <span class="nav-ico" aria-hidden="true">
+                <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+                  <path d="M3 8A5 5 0 1 0 8 3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+                  <path d="M3 4.5V8H6.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+                </svg>
+              </span>
+              <span class="nav-label">Case Replay</span>
+            </button>
+          </li>
+          <li>
+            <button class="nav-item" data-view="reports">
+              <span class="nav-ico" aria-hidden="true">
+                <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+                  <path d="M3 2h7l3 3v9H3V2z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/>
+                  <path d="M10 2v3h3M6 8h4M6 11h2" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/>
+                </svg>
+              </span>
+              <span class="nav-label">Reports</span>
+            </button>
+          </li>
+        </ul>
+      </div>
+
+    </div><!-- /.sidebar-nav -->
+
+    <!-- Sidebar bottom: theme toggle -->
+    <div class="sidebar-bottom">
+      <ul class="nav-list">
+        <li>
+          <button class="nav-item" id="btn-theme" aria-label="Toggle light / dark theme">
+            <span class="nav-ico" id="theme-icon" aria-hidden="true">
+              <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <path d="M12.5 9.5A5 5 0 1 1 6.5 3.5a3.5 3.5 0 1 0 6 6z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/>
+              </svg>
+            </span>
+            <span class="nav-label">Dark mode</span>
+          </button>
+        </li>
+        <li>
+          <button class="nav-item" id="btn-help" aria-label="Keyboard shortcuts">
+            <span class="nav-ico" aria-hidden="true">
+              <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <circle cx="8" cy="8" r="6.5" stroke="currentColor" stroke-width="1.5"/>
+                <path d="M8 10V9a2 2 0 1 0-2-2" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+                <circle cx="8" cy="12" r=".75" fill="currentColor"/>
+              </svg>
+            </span>
+            <span class="nav-label">Help</span>
+          </button>
+        </li>
+      </ul>
     </div>
+
+  </nav><!-- /.sidebar -->
+
+
+  <!-- ============================================================
+       HEADER
+       ============================================================ -->
+  <header class="topbar" role="banner">
+
+    <div class="topbar-left">
+      <!-- Dynamic breadcrumb set by JS when switching views -->
+      <nav class="page-breadcrumb" aria-label="Breadcrumb">
+        <span id="header-page-title">Overview</span>
+      </nav>
+
+      <!-- Global search / command palette trigger -->
+      <div class="header-search">
+        <div class="header-search-wrap">
+          <svg class="search-icon" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+            <circle cx="7" cy="7" r="4.5" stroke="currentColor" stroke-width="1.5"/>
+            <path d="M10.5 10.5L13 13" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+          </svg>
+          <input class="header-search-input" id="global-search" type="text" readonly
+                 placeholder="Search cases, actions… (⌘K)"
+                 aria-label="Open command palette"
+                 autocomplete="off">
+        </div>
+      </div>
+    </div>
+
+    <div class="topbar-right">
+      <!-- Environment indicator -->
+      <span class="env-badge" title="Demo / simulation mode — no real charges">
+        <span class="env-dot" aria-hidden="true"></span>
+        Demo mode
+      </span>
+
+      <!-- Reset demo -->
+      <button id="btn-reset" class="btn btn-ghost btn-sm" title="Re-seed fresh demo data and clear the previous run">
+        Reset demo
+      </button>
+
+      <!-- Primary CTA -->
+      <button id="btn-run" class="btn btn-primary" title="Run the recovery agent over all seeded cases">
+        <svg width="14" height="14" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+          <path d="M4 2.5l9 5.5-9 5.5V2.5z" fill="currentColor"/>
+        </svg>
+        Run agent
+      </button>
+
+      <!-- Export -->
+      <a id="btn-export" class="btn btn-ghost btn-sm" href="/api/export" title="Download CSV summary">
+        <svg width="13" height="13" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+          <path d="M8 2v9M5 8l3 3 3-3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+          <path d="M2 13h12" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+        </svg>
+        Export
+      </a>
+    </div>
+
   </header>
 
-  <!-- App shell: persistent left sidebar + main content area -->
-  <div class="app-shell">
-    <nav class="sidebar" id="sidebar" aria-label="Primary navigation">
-      <ul class="nav-list">
-        <li><button class="nav-item active" data-view="overview">
-          <span class="nav-ico" aria-hidden="true">▦</span><span class="nav-label">Overview</span></button></li>
-        <li><button class="nav-item" data-view="cases">
-          <span class="nav-ico" aria-hidden="true">☰</span><span class="nav-label">Cases</span></button></li>
-        <li><button class="nav-item" data-view="compliance">
-          <span class="nav-ico" aria-hidden="true">✓</span><span class="nav-label">Compliance</span></button></li>
-        <li><button class="nav-item" data-view="ml">
-          <span class="nav-ico" aria-hidden="true">◈</span><span class="nav-label">ML Insights</span></button></li>
-        <li><button class="nav-item" data-view="sandbox">
-          <span class="nav-ico" aria-hidden="true">⚙</span><span class="nav-label">Policy Sandbox</span></button></li>
-        <li><button class="nav-item" data-view="chaos">
-          <span class="nav-ico" aria-hidden="true">⚡</span><span class="nav-label">Chaos Suite</span></button></li>
-        <li><button class="nav-item" data-view="reports">
-          <span class="nav-ico" aria-hidden="true">↧</span><span class="nav-label">Reports</span></button></li>
-      </ul>
-    </nav>
 
-    <main class="content">
-    <div id="status-banner" class="banner hidden"></div>
+  <!-- ============================================================
+       MAIN CONTENT AREA
+       ============================================================ -->
+  <main class="content" id="main-content">
 
-    <!-- Empty state shown before any data is seeded (global, above all views) -->
-    <section id="empty-state" class="empty-state card hidden">
-      <div class="empty-icon">MR</div>
-      <h2>No data yet</h2>
-      <p>Seed 180 synthetic mandate failures, then watch the four-agent pipeline
-        recover them in real time.</p>
-      <ul class="feature-list" style="text-align:left; max-width:420px;">
+    <!-- Status banner (success / error messages) -->
+    <div id="status-banner" class="banner hidden" role="alert" aria-live="polite"></div>
+
+    <!-- ── Empty state: shown when no data has been seeded yet ── -->
+    <section id="empty-state" class="empty-state card hidden" aria-labelledby="empty-heading">
+      <div class="empty-icon" aria-hidden="true">MR</div>
+      <h2 id="empty-heading">No data yet</h2>
+      <p>Seed 180 synthetic mandate failures, then watch the four-agent pipeline recover them in real time.</p>
+      <ul class="feature-list">
         <li>Diagnoses each failure and scores recoverability</li>
         <li>Triages high-value cases first, RBI-compliant throughout</li>
         <li>Generates the right nudge on the right channel</li>
       </ul>
-      <button id="btn-seed-empty" class="btn btn-primary btn-lg" style="margin-top:16px;">Seed demo data</button>
+      <div style="display:flex;gap:12px;margin-top:20px;flex-wrap:wrap;justify-content:center;">
+        <button id="btn-seed-empty" class="btn btn-primary btn-lg">Seed demo data</button>
+        <a class="btn btn-ghost btn-lg" href="/api/export">Download summary</a>
+      </div>
     </section>
 
+    <!-- ── Dashboard: all views live here ── -->
     <div id="dashboard">
 
-    <!-- ============================= OVERVIEW ============================= -->
-    <section class="view active" id="view-overview" data-view="overview">
-      <!-- Run-complete headline banner -->
-      <section id="run-complete" class="run-complete card hidden">
-        <div class="rc-head">
-          <span class="rc-badge">Run complete</span>
-          <button id="rc-dismiss" class="btn btn-ghost btn-sm">Dismiss</button>
-        </div>
-        <div class="rc-figures">
-          <div><span class="rc-num" id="rc-processed">—</span><span class="rc-lbl">processed</span></div>
-          <div><span class="rc-num accent-ok" id="rc-recovered">—</span><span class="rc-lbl">recovered</span></div>
-          <div><span class="rc-num accent-bad" id="rc-escalated">—</span><span class="rc-lbl">escalated</span></div>
-          <div><span class="rc-num" id="rc-recovery-rate">—</span><span class="rc-lbl">recovery rate</span></div>
-        </div>
-      </section>
+      <!-- ================================================================
+           VIEW: OVERVIEW
+           ================================================================ -->
+      <section class="view active" id="view-overview" data-view="overview" aria-label="Overview">
 
-      <!-- KPI cards -->
-      <section class="kpi-row" id="kpi-row">
-        <div class="card kpi"><span class="kpi-label">Amount at risk</span><span class="kpi-value num" id="kpi-at-risk">—</span></div>
-        <div class="card kpi"><span class="kpi-label">Amount recovered</span><span class="kpi-value num accent" id="kpi-recovered">—</span></div>
-        <div class="card kpi"><span class="kpi-label">Recovery rate</span><span class="kpi-value num" id="kpi-recovery-rate">—</span></div>
-        <div class="card kpi"><span class="kpi-label">Escalation rate</span><span class="kpi-value num" id="kpi-escalation-rate">—</span></div>
-      </section>
-
-      <!-- Real Razorpay webhook intake: only shown once at least one real,
-           signature-verified Razorpay event has been received via
-           /api/webhooks/razorpay. Purely informational; distinguishes real
-           integration traffic from the synthetic 180-case simulation. -->
-      <section id="razorpay-live-card" class="card razorpay-live-card hidden">
-        <div class="card-head">
-          <h2>\u26A1 Real Razorpay webhook intake</h2>
-          <span class="hint">Cases received via a signature-verified real Razorpay webhook (/api/webhooks/razorpay), not the synthetic seed.</span>
-        </div>
-        <div class="rc-figures">
-          <div><span class="rc-num" id="rzp-live-count">0</span><span class="rc-lbl">real cases received</span></div>
-        </div>
-        <p class="card-sub">
-          These cases flow through the identical recovery pipeline as the synthetic
-          demo data &mdash; same scoring, same strategy, same compliance checks.
-        </p>
-      </section>
-
-      <!-- Live pipeline visualization (populated during a run) -->
-      <section id="live-panel" class="card live-panel hidden">
-        <div class="card-head">
-          <h2>Live agent run</h2>
-          <span class="hint">Each case flows Diagnosis → Triage → Strategy → Communication.</span>
-        </div>
-        <div class="live-counters">
-          <div class="lc"><span class="lc-num" id="lc-processed">0</span><span class="lc-lbl">Processed</span></div>
-          <div class="lc"><span class="lc-num accent-ok" id="lc-recovered">0</span><span class="lc-lbl">Recovered</span></div>
-          <div class="lc"><span class="lc-num accent-bad" id="lc-escalated">0</span><span class="lc-lbl">Escalated</span></div>
-          <div class="lc lc-progress"><div class="lc-bar"><span id="lc-fill"></span></div><span class="lc-lbl lc-count" id="lc-count">0 / 0</span></div>
-        </div>
-        <!-- Four-agent pipeline: rounded nodes joined by thin lines, blue pulse travels left→right -->
-        <div class="pipeline" id="pipeline">
-          <div class="pnode" data-stage="diagnosis">
-            <div class="pnode-dot">1</div>
-            <div class="pnode-name">Diagnosis</div>
-            <div class="pnode-count" data-count="diagnosis">0</div>
+        <!-- ── Run-complete confirmation ── -->
+        <section id="run-complete" class="run-complete card hidden" aria-live="polite" aria-label="Run complete">
+          <div class="rc-head">
+            <span class="rc-badge">
+              <svg width="12" height="12" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+                <path d="M3 8.5l3.5 3.5 6.5-7" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+              </svg>
+              Run complete
+            </span>
+            <button id="rc-dismiss" class="btn btn-ghost btn-sm">Dismiss</button>
           </div>
-          <div class="pnode" data-stage="triage">
-            <div class="pnode-dot">2</div>
-            <div class="pnode-name">Triage</div>
-            <div class="pnode-count" data-count="triage">0</div>
-          </div>
-          <div class="pnode" data-stage="strategy">
-            <div class="pnode-dot">3</div>
-            <div class="pnode-name">Strategy</div>
-            <div class="pnode-count" data-count="strategy">0</div>
-          </div>
-          <div class="pnode" data-stage="communication">
-            <div class="pnode-dot">4</div>
-            <div class="pnode-name">Communication</div>
-            <div class="pnode-count" data-count="communication">0</div>
-          </div>
-        </div>
-        <div id="live-feed" class="live-feed"></div>
-      </section>
-
-      <!-- Agent vs baseline + cohort rail -->
-      <div class="main-grid">
-        <div class="main-col">
-          <section class="card">
-            <h2>Agent vs baseline recovery</h2>
-            <p class="card-sub">What our agent recovered versus a naive "retry everyone once" approach.</p>
-            <canvas id="baseline-chart" height="200"></canvas>
-            <p class="uplift" id="uplift-note"></p>
-          </section>
-        </div>
-        <div class="right-rail">
-          <section class="card">
-            <h2>Recovery by cohort</h2>
-            <p class="card-sub">Not just "did it work" — for whom does it work.</p>
-            <div class="cohort-tabs">
-              <button class="tab active" data-cohort="tenure">By tenure</button>
-              <button class="tab" data-cohort="category">By category</button>
+          <div class="rc-figures">
+            <div>
+              <span class="rc-num num" id="rc-processed">—</span>
+              <span class="rc-lbl">Processed</span>
             </div>
-            <div id="cohort-body" class="cohort-body"></div>
-          </section>
-
-          <!-- Activity feed: most recent audit_log events across all cases, newest
-               first. Read-only view over /api/activity; updates after each run. -->
-          <section class="card activity-card">
-            <div class="card-head">
-              <h2>Activity</h2>
-              <span class="hint">Most recent agent events across all cases.</span>
+            <div>
+              <span class="rc-num num accent-ok" id="rc-recovered">—</span>
+              <span class="rc-lbl">Recovered</span>
             </div>
-            <div id="activity-feed" class="activity-feed">
-              <div class="activity-empty muted">Run the agent to see live activity here.</div>
+            <div>
+              <span class="rc-num num accent-bad" id="rc-escalated">—</span>
+              <span class="rc-lbl">Escalated</span>
             </div>
-          </section>
-        </div>
-      </div>
-    </section>
-
-    <!-- ============================= CASES ============================= -->
-    <section class="view" id="view-cases" data-view="cases">
-      <!-- Natural-language query -->
-      <section class="card ask-card">
-        <div class="card-head">
-          <h2>Ask the data</h2>
-          <span class="hint">Type a question in plain English. The assistant turns it into a filter; results come from real rows.</span>
-        </div>
-        <div class="ask-input-row">
-          <input id="ask-input" class="ask-input" type="text"
-                 placeholder="e.g. show me all non-compliant high-value cases" autocomplete="off">
-          <button id="ask-btn" class="btn btn-primary">Ask</button>
-        </div>
-        <!-- Saved views: appear here once a user saves a successful query. Each chip
-             re-runs the stored question instantly. Session-only (in-memory). -->
-        <div id="saved-views-row" class="saved-views-row hidden">
-          <span class="saved-views-label">Saved views</span>
-          <div id="saved-views-chips" class="saved-views-chips"></div>
-        </div>
-        <div class="ask-chips" id="ask-chips">
-          <button class="chip" data-q="show me all non-compliant high-value cases">Non-compliant high-value</button>
-          <button class="chip" data-q="which customers are at high churn risk">High churn risk</button>
-          <button class="chip" data-q="show escalated EMI cases">Escalated EMI cases</button>
-          <button class="chip" data-q="cases over the mandate limit">Over mandate limit</button>
-        </div>
-        <div id="ask-result" class="ask-result hidden"></div>
-      </section>
-
-      <!-- Cases table -->
-      <section class="card">
-        <div class="card-head">
-          <h2>Cases <span class="muted num" id="cases-count"></span></h2>
-          <span class="hint">Sorted by recoverability score — the agent triages high-value cases first. Click a row for the full audit trail.</span>
-        </div>
-        <!-- All / Starred filter (starring persists for the browser session). -->
-        <div class="cases-tabs" id="cases-tabs">
-          <button class="tab active" data-cases-filter="all">All</button>
-          <button class="tab" data-cases-filter="starred">
-            <span class="tab-star" aria-hidden="true">★</span> Starred
-            <span class="tab-count num" id="starred-count">0</span>
-          </button>
-        </div>
-        <div class="table-wrap">
-          <table class="cases-table">
-            <thead>
-              <tr>
-                <th class="th-star" title="Star cases to bookmark them for this session"><span aria-hidden="true">★</span></th>
-                <th>Score</th><th title="Additive ML prediction — does not drive decisions">ML P(recover)</th>
-                <th>Customer</th><th>Reason</th><th>Amount</th>
-                <th>Status</th><th>Salary window</th><th>Compliance</th><th>Dunning</th><th>Health</th>
-              </tr>
-            </thead>
-            <tbody id="cases-tbody"></tbody>
-          </table>
-          <div id="cases-empty-starred" class="cases-empty-starred muted hidden">
-            No starred cases yet. Click the ★ on any row to bookmark it for this session.
-          </div>
-        </div>
-      </section>
-
-      <!-- Exceptions: first-class, never minimized (N2) -->
-      <section class="card exceptions">
-        <div class="card-head">
-          <h2>Exceptions <span class="muted num" id="exceptions-count"></span></h2>
-          <span class="hint">Cases that ended unrecovered. We surface these honestly, with the reason each one failed.</span>
-        </div>
-        <div class="table-wrap">
-          <table class="cases-table">
-            <thead>
-              <tr><th>Customer</th><th>Amount</th><th>Reason</th><th>Category</th><th>Status</th><th>Why unrecovered</th></tr>
-            </thead>
-            <tbody id="exceptions-tbody"></tbody>
-          </table>
-        </div>
-      </section>
-    </section>
-
-    <!-- ============================= COMPLIANCE ============================= -->
-    <section class="view" id="view-compliance" data-view="compliance">
-      <!-- Correctness audit -->
-      <section id="audit-panel" class="card audit-panel hidden">
-        <div class="card-head">
-          <h2>Correctness Audit</h2>
-          <span class="hint">Independently re-checks every case against the stated rules
-            &mdash; retry cap, RBI pre-debit gate, revoked-mandate handling, money totals,
-            and the baseline comparison.</span>
-        </div>
-        <div id="audit-summary" class="audit-summary"></div>
-        <div id="audit-checks" class="audit-checks"></div>
-      </section>
-
-      <!-- Rejected webhooks: security check, spoofed events blocked at ingestion -->
-      <section class="card rejected" id="rejected-card">
-        <div class="card-head">
-          <h2>Rejected webhooks <span class="muted num" id="rejected-count"></span></h2>
-          <span class="hint">Events blocked at ingestion for failing HMAC-SHA256 signature verification — never entered the pipeline.</span>
-        </div>
-        <p class="card-sub rejected-note">
-          Note: the same three customer IDs appear on every run by design. The demo seeds a
-          fixed set of deliberately spoofed webhooks for reproducibility, so these rows are
-          expected to be identical each time (they change only if the spoofed set in
-          <code>seed.py</code> is changed) — not cached. Each row below is a real
-          <code>webhook_rejected</code> audit event from the current run.
-        </p>
-        <div class="table-wrap">
-          <table class="cases-table">
-            <thead>
-              <tr><th>Customer</th><th>Event</th><th>Amount</th><th>When</th><th>Why rejected</th></tr>
-            </thead>
-            <tbody id="rejected-tbody"></tbody>
-          </table>
-        </div>
-      </section>
-
-      <div id="compliance-empty" class="view-empty muted hidden">
-        Run the agent to populate the correctness audit and see any rejected webhooks.
-      </div>
-    </section>
-
-    <!-- ============================= ML INSIGHTS ============================= -->
-    <section class="view" id="view-ml" data-view="ml">
-      <section id="ml-panel" class="card ml-panel hidden">
-        <div class="card-head">
-          <h2>ML Model &mdash; trained and validated on simulation outcomes</h2>
-          <span class="hint" id="ml-winner-hint"></span>
-        </div>
-        <p class="ml-note">
-          This model predicts each case's <b>recovery likelihood</b> from its features.
-          It is an additive validation/research layer: the numbers below come from a real
-          scikit-learn model evaluated on a held-out test set. <b>Actual agent decisions
-          (retry, escalation, RBI compliance) still use the deterministic rule-based
-          scoring and compliance logic</b> &mdash; this model does not drive them.
-        </p>
-        <div class="ml-metric-grid" id="ml-metric-grid"></div>
-        <p class="muted ml-caveat hidden" id="ml-caveat"></p>
-
-        <!-- Global SHAP feature importance -->
-        <div id="ml-shap-importance" class="ml-shap-importance hidden">
-          <div class="section-title" id="ml-shap-title">Feature importance &middot; mean |SHAP|</div>
-          <p class="muted ml-shap-cap" id="ml-shap-cap"></p>
-          <canvas id="ml-shap-chart" height="200"></canvas>
-        </div>
-        <div class="ml-lower">
-          <div class="ml-cm">
-            <div class="section-title">Confusion matrix &middot; held-out test set</div>
-            <table class="cm-table" id="ml-cm-table"></table>
-            <p class="muted ml-cm-cap" id="ml-cm-cap"></p>
-          </div>
-          <div class="ml-compare">
-            <div class="section-title">Model comparison &middot; by ROC-AUC</div>
-            <table class="cases-table ml-compare-table" id="ml-compare-table"></table>
-            <p class="muted ml-dataset-note" id="ml-dataset-note"></p>
-          </div>
-        </div>
-      </section>
-
-      <div id="ml-empty" class="view-empty muted hidden">
-        The ML validation layer is unavailable. Train the model with
-        <code>python backend/ml/train_model.py</code> to populate this section.
-      </div>
-    </section>
-
-    <!-- ============================= POLICY SANDBOX ============================= -->
-    <section class="view" id="view-sandbox" data-view="sandbox">
-      <section id="sandbox-panel" class="card sandbox-panel">
-        <div class="card-head">
-          <h2>Policy Sandbox</h2>
-          <span class="hint">Experimentation sandbox &mdash; explores policy sensitivity
-            via repeated simulation, does not affect the live agent's actual configuration.</span>
-        </div>
-        <p class="sandbox-note">
-          Adjust the policy knobs, then run the simulation many times to see how recovery,
-          escalation, and amount recovered respond &mdash; each reported as a mean with a
-          95% confidence interval. This is an <b>analysis tool</b>: runs happen in isolated
-          in-memory databases and <b>skip the LLM</b> for speed (narration is template-based
-          and never affects outcomes). The live agent's real retry cap, weights, and
-          salary-window behavior are unchanged.
-        </p>
-
-        <div class="sandbox-grid">
-          <div class="sandbox-controls">
-            <div class="sb-field">
-              <label for="sb-retry-cap">Retry cap
-                <span class="sb-val" id="sb-retry-cap-val">3</span></label>
-              <input type="range" id="sb-retry-cap" min="1" max="5" step="1" value="3">
-              <span class="sb-sub">Max debit attempts before mandatory escalation (default 3).</span>
+            <div>
+              <span class="rc-num num" id="rc-recovery-rate">—</span>
+              <span class="rc-lbl">Recovery rate</span>
             </div>
+          </div>
+        </section>
 
-            <div class="sb-field">
-              <label>Score weights <span class="muted">(must sum to 1.0)</span></label>
-              <div class="sb-weights">
-                <div class="sb-weight">
-                  <span class="sb-wlabel">Success</span>
-                  <input type="number" id="sb-w-success" class="sb-wnum" min="0" max="1" step="0.05" value="0.40">
-                </div>
-                <div class="sb-weight">
-                  <span class="sb-wlabel">Tenure</span>
-                  <input type="number" id="sb-w-tenure" class="sb-wnum" min="0" max="1" step="0.05" value="0.20">
-                </div>
-                <div class="sb-weight">
-                  <span class="sb-wlabel">Retry</span>
-                  <input type="number" id="sb-w-retry" class="sb-wnum" min="0" max="1" step="0.05" value="0.20">
-                </div>
-                <div class="sb-weight">
-                  <span class="sb-wlabel">Reason</span>
-                  <input type="number" id="sb-w-reason" class="sb-wnum" min="0" max="1" step="0.05" value="0.20">
-                </div>
+        <!-- ── KPI row ── -->
+        <section class="kpi-row" id="kpi-row" aria-label="Key metrics">
+          <div class="card kpi">
+            <span class="kpi-label">Amount at risk</span>
+            <span class="kpi-value num" id="kpi-at-risk">—</span>
+          </div>
+          <div class="card kpi">
+            <span class="kpi-label">Amount recovered</span>
+            <span class="kpi-value num accent-ok" id="kpi-recovered">—</span>
+          </div>
+          <div class="card kpi">
+            <span class="kpi-label">Recovery rate</span>
+            <span class="kpi-value num" id="kpi-recovery-rate">—</span>
+          </div>
+          <div class="card kpi">
+            <span class="kpi-label">Escalation rate</span>
+            <span class="kpi-value num" id="kpi-escalation-rate">—</span>
+          </div>
+        </section>
+
+        <!-- ── Real Razorpay webhook intake ── -->
+        <section id="razorpay-live-card" class="card razorpay-live-card hidden" aria-label="Live Razorpay intake">
+          <div class="card-head">
+            <h2 class="card-title">
+              <svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true" style="vertical-align:-2px;margin-right:4px;">
+                <path d="M9.5 1.5L5 9h5L5.5 14.5 13 6.5H8L9.5 1.5z" fill="currentColor"/>
+              </svg>
+              Real Razorpay webhook intake
+            </h2>
+            <span class="badge badge-info">Live</span>
+          </div>
+          <p class="card-sub">Cases received via a signature-verified real Razorpay webhook — not the synthetic seed. Same recovery pipeline.</p>
+          <div class="rc-figures" style="grid-template-columns:max-content;">
+            <div>
+              <span class="rc-num num" id="rzp-live-count">0</span>
+              <span class="rc-lbl">Real cases received</span>
+            </div>
+          </div>
+        </section>
+
+        <!-- ── Live agent run panel ── -->
+        <section id="live-panel" class="card live-panel hidden" aria-label="Live agent run" aria-live="polite">
+          <div class="card-head">
+            <h2 class="card-title">Live agent run</h2>
+            <span class="muted">Diagnosis → Triage → Strategy → Communication</span>
+          </div>
+          <div class="live-counters">
+            <div class="lc">
+              <span class="lc-num num" id="lc-processed">0</span>
+              <span class="lc-lbl">Processed</span>
+            </div>
+            <div class="lc">
+              <span class="lc-num num accent-ok" id="lc-recovered">0</span>
+              <span class="lc-lbl">Recovered</span>
+            </div>
+            <div class="lc">
+              <span class="lc-num num accent-bad" id="lc-escalated">0</span>
+              <span class="lc-lbl">Escalated</span>
+            </div>
+            <div class="lc lc-progress">
+              <div class="lc-bar" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
+                <span id="lc-fill"></span>
               </div>
-              <span class="sb-sub" id="sb-weight-sum">Sum: 1.00 &check;</span>
+              <span class="lc-lbl lc-count num" id="lc-count">0 / 0</span>
             </div>
+          </div>
+          <!-- Four-agent pipeline nodes -->
+          <div class="pipeline" id="pipeline" role="list" aria-label="Pipeline stages">
+            <div class="pnode" data-stage="diagnosis" role="listitem">
+              <div class="pnode-dot">1</div>
+              <div class="pnode-name">Diagnosis</div>
+              <div class="pnode-count num" data-count="diagnosis">0</div>
+            </div>
+            <div class="pnode" data-stage="triage" role="listitem">
+              <div class="pnode-dot">2</div>
+              <div class="pnode-name">Triage</div>
+              <div class="pnode-count num" data-count="triage">0</div>
+            </div>
+            <div class="pnode" data-stage="strategy" role="listitem">
+              <div class="pnode-dot">3</div>
+              <div class="pnode-name">Strategy</div>
+              <div class="pnode-count num" data-count="strategy">0</div>
+            </div>
+            <div class="pnode" data-stage="communication" role="listitem">
+              <div class="pnode-dot">4</div>
+              <div class="pnode-name">Communication</div>
+              <div class="pnode-count num" data-count="communication">0</div>
+            </div>
+          </div>
+          <div id="live-feed" class="live-feed" aria-live="polite" aria-label="Live case feed"></div>
+        </section>
 
-            <div class="sb-field">
-              <label>Salary-window mode</label>
-              <div class="sb-toggle" id="sb-mode-toggle">
-                <button type="button" class="sb-toggle-btn active" data-mode="adaptive">Adaptive (v2)</button>
-                <button type="button" class="sb-toggle-btn" data-mode="generic_only">Generic only</button>
+        <!-- ── Recovery Funnel ── -->
+        <section class="card funnel-card" id="funnel-card" aria-label="Recovery funnel">
+          <div class="card-head">
+            <h2 class="card-title">Recovery funnel</h2>
+            <span class="badge badge-neutral">Simulation · no real charges</span>
+          </div>
+          <div class="funnel-stages" id="funnel-stages" role="list">
+            <div class="funnel-stage" id="fn-failed" role="listitem">
+              <div class="fn-icon fn-icon-fail" aria-hidden="true">✕</div>
+              <div class="fn-label">Failed</div>
+              <div class="fn-count num" id="fn-count-failed">—</div>
+              <div class="fn-amount num" id="fn-amt-failed">—</div>
+            </div>
+            <div class="funnel-arrow" aria-hidden="true">→</div>
+            <div class="funnel-stage" id="fn-diagnosed" role="listitem">
+              <div class="fn-icon fn-icon-blue" aria-hidden="true">⚑</div>
+              <div class="fn-label">Diagnosed</div>
+              <div class="fn-count num" id="fn-count-diagnosed">—</div>
+              <div class="fn-sub muted">Entered pipeline</div>
+            </div>
+            <div class="funnel-arrow" aria-hidden="true">→</div>
+            <div class="funnel-stage" id="fn-strategy" role="listitem">
+              <div class="fn-icon fn-icon-blue" aria-hidden="true">⊙</div>
+              <div class="fn-label">Strategy set</div>
+              <div class="fn-count num" id="fn-count-strategy">—</div>
+              <div class="fn-sub muted">Retry / dunning / reauth</div>
+            </div>
+            <div class="funnel-arrow" aria-hidden="true">→</div>
+            <div class="fn-split" role="group" aria-label="Final outcomes">
+              <div class="fn-branch fn-branch-ok" role="listitem">
+                <div class="fn-icon fn-icon-ok" aria-hidden="true">✓</div>
+                <div class="fn-label accent-ok">Recovered</div>
+                <div class="fn-count num accent-ok" id="fn-count-recovered">—</div>
+                <div class="fn-amount num accent-ok" id="fn-amt-recovered">—</div>
               </div>
-              <span class="sb-sub">Adaptive personalizes to each customer's payday; generic always uses fallback windows.
-                In this simulation the window timing shapes the strategy narrative but not the modeled
-                retry success probability, so its effect on the aggregate rates is expected to be small.</span>
+              <div class="fn-branch fn-branch-bad" role="listitem">
+                <div class="fn-icon fn-icon-bad" aria-hidden="true">↑</div>
+                <div class="fn-label accent-bad">Escalated</div>
+                <div class="fn-count num accent-bad" id="fn-count-escalated">—</div>
+                <div class="fn-amount num accent-bad" id="fn-amt-escalated">—</div>
+              </div>
             </div>
+          </div>
+          <p id="funnel-pre-run" class="funnel-pre-run muted">Run the agent to populate the recovery funnel.</p>
+        </section>
 
-            <div class="sb-field sb-runs">
-              <label for="sb-n-runs">Simulation runs <span class="sb-val" id="sb-n-runs-val">30</span></label>
-              <input type="range" id="sb-n-runs" min="5" max="60" step="5" value="30">
+        <!-- ── Live recovery counter ── -->
+        <section class="card live-recovery-card hidden" id="live-recovery-card" aria-live="polite" aria-label="Live recovery totals">
+          <div class="card-head">
+            <h2 class="card-title">Live recovery — this run</h2>
+            <span class="badge badge-neutral">Simulation · no real charges</span>
+          </div>
+          <div class="live-recovery-row">
+            <div class="lr-item">
+              <span class="lr-label">Recovered this run</span>
+              <span class="lr-value num accent-ok" id="lr-amount">₹0</span>
             </div>
+            <div class="lr-item">
+              <span class="lr-label">Cases recovered</span>
+              <span class="lr-value num" id="lr-cases">0</span>
+            </div>
+            <div class="lr-item">
+              <span class="lr-label">Cases escalated</span>
+              <span class="lr-value num accent-bad" id="lr-escalated">0</span>
+            </div>
+            <div class="lr-item">
+              <span class="lr-label">Cases rejected</span>
+              <span class="lr-value num" id="lr-rejected">0</span>
+            </div>
+          </div>
+        </section>
 
-            <div class="sb-actions">
-              <button id="sb-run-btn" class="btn btn-primary">Run Simulation (30x)</button>
-              <button id="sb-reset-btn" class="btn btn-ghost btn-sm">Reset to default policy</button>
+        <!-- ── Chart + Cohort ── -->
+        <div class="main-grid">
+          <div class="main-col">
+            <section class="card">
+              <div class="card-head">
+                <h2 class="card-title">Agent vs baseline recovery</h2>
+              </div>
+              <p class="card-sub">What the agent recovered vs a naive "retry everyone once" approach. Both figures come from the actual run.</p>
+              <canvas id="baseline-chart" height="220" role="img" aria-label="Agent vs baseline bar chart"></canvas>
+              <p class="uplift" id="uplift-note"></p>
+            </section>
+          </div>
+          <div class="right-rail">
+            <section class="card">
+              <div class="card-head">
+                <h2 class="card-title">Recovery by cohort</h2>
+              </div>
+              <div class="cohort-tabs" role="tablist" aria-label="Cohort breakdowns">
+                <button class="tab active" data-cohort="tenure" role="tab" aria-selected="true">By tenure</button>
+                <button class="tab" data-cohort="category" role="tab" aria-selected="false">By category</button>
+              </div>
+              <div id="cohort-body" class="cohort-body" role="tabpanel"></div>
+            </section>
+
+            <!-- Activity feed -->
+            <section class="card activity-card">
+              <div class="card-head">
+                <h2 class="card-title">Recent activity</h2>
+                <span class="muted">Latest agent events</span>
+              </div>
+              <div id="activity-feed" class="activity-feed" aria-live="polite" aria-label="Activity feed">
+                <div class="activity-empty">Run the agent to see live activity here.</div>
+              </div>
+            </section>
+          </div>
+        </div>
+
+      </section><!-- /#view-overview -->
+
+
+      <!-- ================================================================
+           VIEW: CASES
+           ================================================================ -->
+      <section class="view" id="view-cases" data-view="cases" aria-label="Cases">
+
+        <!-- Ask the Data -->
+        <section class="card ask-card">
+          <div class="card-head">
+            <div>
+              <h2 class="card-title">Ask the data</h2>
+              <p class="card-sub">Type a question in plain English. The assistant turns it into a filter — results come from real rows.</p>
             </div>
-            <div id="sb-error" class="sb-error hidden"></div>
+          </div>
+          <div class="ask-input-row">
+            <label for="ask-input" class="hidden">Ask a question about the data</label>
+            <input id="ask-input" class="ask-input" type="text"
+                   placeholder="e.g. show failed payments above ₹5,000" autocomplete="off"
+                   aria-label="Ask a question about the data">
+            <button id="ask-btn" class="btn btn-primary">Ask</button>
+          </div>
+          <!-- Saved views row -->
+          <div id="saved-views-row" class="saved-views-row hidden" aria-label="Saved views">
+            <span class="saved-views-label">Saved</span>
+            <div id="saved-views-chips" class="saved-views-chips"></div>
+          </div>
+          <!-- Quick example chips -->
+          <div class="ask-chips" id="ask-chips" role="list" aria-label="Example queries">
+            <button class="chip" data-q="show me all non-compliant high-value cases" role="listitem">Non-compliant high-value</button>
+            <button class="chip" data-q="which customers are at high churn risk" role="listitem">High churn risk</button>
+            <button class="chip" data-q="show escalated EMI cases" role="listitem">Escalated EMI cases</button>
+            <button class="chip" data-q="cases over the mandate limit" role="listitem">Over mandate limit</button>
+          </div>
+          <div id="ask-result" class="ask-result hidden" role="region" aria-live="polite" aria-label="Query results"></div>
+        </section>
+
+        <!-- Cases table -->
+        <section class="card card-flush">
+          <div class="card-head" style="padding:20px 24px 0;">
+            <div>
+              <h2 class="card-title">
+                Cases
+                <span class="muted num" id="cases-count" style="font-size:13px;font-weight:500;"></span>
+              </h2>
+              <p class="card-sub">Sorted by recoverability score — the agent triages high-value cases first. Click a row for the full audit trail.</p>
+            </div>
+          </div>
+          <div style="padding:0 24px 12px;">
+            <div class="cases-tabs" id="cases-tabs" role="tablist">
+              <button class="tab active" data-cases-filter="all" role="tab" aria-selected="true">All</button>
+              <button class="tab" data-cases-filter="starred" role="tab" aria-selected="false">
+                <span class="tab-star" aria-hidden="true">★</span>
+                Starred
+                <span class="tab-count num" id="starred-count">0</span>
+              </button>
+            </div>
+          </div>
+          <div class="table-wrap">
+            <table class="cases-table" aria-label="Cases table">
+              <thead>
+                <tr>
+                  <th class="th-star" title="Bookmark case"><span aria-hidden="true">★</span></th>
+                  <th>Score</th>
+                  <th title="Additive ML prediction — does not drive decisions">ML P(rec.)</th>
+                  <th>Customer</th>
+                  <th>Failure reason</th>
+                  <th>Amount</th>
+                  <th>Status</th>
+                  <th>Salary window</th>
+                  <th>Compliance</th>
+                  <th>Dunning</th>
+                  <th>Health</th>
+                </tr>
+              </thead>
+              <tbody id="cases-tbody"></tbody>
+            </table>
+            <div id="cases-empty-starred" class="cases-empty-starred hidden" role="status">
+              No starred cases yet. Click ★ on any row to bookmark it for this session.
+            </div>
+          </div>
+        </section>
+
+        <!-- Exceptions -->
+        <section class="card card-flush exceptions">
+          <div class="card-head" style="padding:20px 24px 16px;">
+            <div>
+              <h2 class="card-title">
+                Exceptions
+                <span class="muted num" id="exceptions-count" style="font-size:13px;font-weight:500;"></span>
+              </h2>
+              <p class="card-sub">Cases that ended unrecovered. Surfaced honestly with the reason each one failed.</p>
+            </div>
+          </div>
+          <div class="table-wrap">
+            <table class="cases-table" aria-label="Exceptions table">
+              <thead>
+                <tr>
+                  <th>Customer</th>
+                  <th>Amount</th>
+                  <th>Failure reason</th>
+                  <th>Category</th>
+                  <th>Status</th>
+                  <th>Why unrecovered</th>
+                </tr>
+              </thead>
+              <tbody id="exceptions-tbody"></tbody>
+            </table>
+          </div>
+        </section>
+
+      </section><!-- /#view-cases -->
+
+
+      <!-- ================================================================
+           VIEW: COMPLIANCE
+           ================================================================ -->
+      <section class="view" id="view-compliance" data-view="compliance" aria-label="Compliance">
+
+        <!-- Correctness Audit -->
+        <section id="audit-panel" class="card audit-panel hidden" aria-label="Correctness audit">
+          <div class="card-head">
+            <div>
+              <h2 class="card-title">Correctness audit</h2>
+              <p class="card-sub">Independently re-checks every case against the stated rules — retry cap, RBI pre-debit gate, revoked-mandate handling, money totals, and baseline comparison.</p>
+            </div>
+          </div>
+          <div id="audit-summary" class="audit-summary"></div>
+          <div id="audit-checks" class="audit-checks"></div>
+        </section>
+
+        <!-- Webhook Inspector -->
+        <section class="card card-flush webhook-inspector-card" id="webhook-inspector-card" aria-label="Webhook inspector">
+          <div class="card-head" style="padding:20px 24px 16px;">
+            <div>
+              <h2 class="card-title">Webhook inspector</h2>
+              <p class="card-sub">Every inbound webhook event — signature status, payload source, processing outcome.</p>
+            </div>
+          </div>
+          <div id="webhook-inspector-empty" class="view-empty" style="margin:0 24px 20px;" role="status">
+            Run the agent to see webhook events logged here.
+          </div>
+          <div id="webhook-inspector-table-wrap" class="table-wrap hidden">
+            <table class="cases-table" aria-label="Webhook events">
+              <thead>
+                <tr>
+                  <th>Event type</th>
+                  <th>Customer</th>
+                  <th>Amount</th>
+                  <th>Signature</th>
+                  <th>Source</th>
+                  <th>Outcome</th>
+                  <th>Timestamp</th>
+                </tr>
+              </thead>
+              <tbody id="webhook-inspector-tbody"></tbody>
+            </table>
+          </div>
+        </section>
+
+        <!-- Rejected webhooks -->
+        <section class="card card-flush rejected" id="rejected-card" aria-label="Rejected webhooks">
+          <div class="card-head" style="padding:20px 24px 12px;">
+            <div>
+              <h2 class="card-title">
+                Rejected webhooks
+                <span class="muted num" id="rejected-count" style="font-size:13px;font-weight:500;"></span>
+              </h2>
+            </div>
+          </div>
+          <p class="rejected-note" style="padding:0 24px 12px;">
+            Events blocked at ingestion for failing HMAC-SHA256 signature verification — never entered the pipeline.
+            The same three customer IDs appear on every run by design (fixed spoofed set in <code>seed.py</code>).
+          </p>
+          <div class="table-wrap">
+            <table class="cases-table" aria-label="Rejected webhooks table">
+              <thead>
+                <tr>
+                  <th>Customer</th>
+                  <th>Event</th>
+                  <th>Amount</th>
+                  <th>When</th>
+                  <th>Why rejected</th>
+                </tr>
+              </thead>
+              <tbody id="rejected-tbody"></tbody>
+            </table>
+          </div>
+        </section>
+
+        <div id="compliance-empty" class="view-empty hidden" role="status">
+          Run the agent to populate the correctness audit and see any rejected webhooks.
+        </div>
+
+      </section><!-- /#view-compliance -->
+
+
+      <!-- ================================================================
+           VIEW: ML INSIGHTS
+           ================================================================ -->
+      <section class="view" id="view-ml" data-view="ml" aria-label="ML Insights">
+
+        <section id="ml-panel" class="card ml-panel hidden" aria-label="ML model evaluation">
+          <div class="card-head">
+            <div>
+              <h2 class="card-title">ML model — trained &amp; validated on simulation outcomes</h2>
+              <p class="card-sub" id="ml-winner-hint"></p>
+            </div>
+          </div>
+          <div class="ml-note" role="note">
+            This model predicts each case's <strong>recovery likelihood</strong> from its features.
+            It is an additive validation/research layer: the numbers below come from a real
+            scikit-learn model evaluated on a held-out test set. <strong>Actual agent decisions
+            (retry, escalation, RBI compliance) still use the deterministic rule-based
+            scoring and compliance logic</strong> — this model does not drive them.
+          </div>
+          <div class="ml-metric-grid" id="ml-metric-grid"></div>
+          <p class="muted ml-caveat hidden" id="ml-caveat"></p>
+
+          <!-- SHAP global importance -->
+          <div id="ml-shap-importance" class="ml-shap-importance hidden">
+            <div class="section-title" id="ml-shap-title">Feature importance · mean |SHAP|</div>
+            <p class="muted ml-shap-cap" id="ml-shap-cap"></p>
+            <canvas id="ml-shap-chart" height="200" role="img" aria-label="SHAP feature importance chart"></canvas>
           </div>
 
-          <div class="sandbox-results">
-            <div id="sb-placeholder" class="sb-placeholder">
-              Set a policy and run the simulation to see recovery, escalation, and amount
-              recovered with 95% confidence intervals &mdash; plus a side-by-side comparison
-              against the current default policy.
+          <div class="ml-lower">
+            <div class="ml-cm">
+              <div class="section-title">Confusion matrix · held-out test set</div>
+              <table class="cm-table" id="ml-cm-table" aria-label="Confusion matrix"></table>
+              <p class="muted ml-cm-cap" id="ml-cm-cap"></p>
             </div>
-            <div id="sb-results" class="sb-results hidden"></div>
+            <div class="ml-compare">
+              <div class="section-title">Model comparison · by ROC-AUC</div>
+              <table class="cases-table ml-compare-table" id="ml-compare-table" aria-label="Model comparison"></table>
+              <p class="muted ml-dataset-note" id="ml-dataset-note"></p>
+            </div>
           </div>
-        </div>
-      </section>
-    </section>
+        </section>
 
-    <!-- ============================= CHAOS SUITE ============================= -->
-    <section class="view" id="view-chaos" data-view="chaos">
-      <section class="card chaos-panel">
-        <div class="card-head">
-          <h2>Chaos Suite</h2>
-          <span class="hint">Adversarial test suite &mdash; deliberately attacks the system
-            with malformed, malicious, and edge-case inputs. Runs against isolated in-memory
-            databases; never touches the live demo data.</span>
+        <div id="ml-empty" class="view-empty hidden" role="status">
+          The ML validation layer is unavailable. Train the model with
+          <code>python backend/ml/train_model.py</code> to populate this section.
         </div>
-        <p class="chaos-note">
-          Seven adversarial scenarios &mdash; replayed webhooks, negative/zero amounts,
-          duplicate customer IDs, clock-skew timestamps, malformed LLM responses,
-          webhook-signature edge cases, and extreme volume. Each runs in its own fresh,
-          isolated database. This is a <b>diagnostic tool</b>: it proves the system's
-          defenses hold up under abuse and does not change any agent, scoring, or
-          compliance behavior.
-        </p>
-        <div class="chaos-actions">
-          <button id="chaos-run-btn" class="btn btn-primary">Run chaos suite</button>
-        </div>
-        <div id="chaos-placeholder" class="chaos-placeholder">
-          Run the suite to attack the system with seven adversarial scenarios and see a
-          PASS/FAIL report for each.
-        </div>
-        <div id="chaos-error" class="sb-error hidden"></div>
-        <div id="chaos-results" class="chaos-results hidden"></div>
-      </section>
-    </section>
 
-    <!-- ============================= REPORTS ============================= -->
-    <section class="view" id="view-reports" data-view="reports">
-      <section class="card">
-        <div class="card-head">
-          <h2>Reports</h2>
-          <span class="hint">Export the current run as a CSV summary. Every row traces to a logged audit event.</span>
-        </div>
-        <p class="card-sub">
-          Download a machine-readable summary of the current run: per-case outcomes,
-          recoverability scores, compliance status, and money figures. The same figures
-          appear on the Overview and Compliance sections and are re-checked by the
-          correctness audit.
-        </p>
-        <div class="reports-actions">
-          <a class="btn btn-primary btn-lg" href="/api/export">Download summary (CSV)</a>
-        </div>
+      </section><!-- /#view-ml -->
+
+      <!-- ================================================================
+           VIEW: POLICY SANDBOX
+           ================================================================ -->
+      <section class="view" id="view-sandbox" data-view="sandbox" aria-label="Policy Sandbox">
+
+        <section id="sandbox-panel" class="card sandbox-panel">
+          <div class="card-head">
+            <div>
+              <h2 class="card-title">Policy sandbox</h2>
+              <p class="card-sub">Experimentation sandbox — explores policy sensitivity via repeated simulation. Does not affect the live agent's actual configuration.</p>
+            </div>
+            <span class="badge badge-warning">Simulation only</span>
+          </div>
+          <div class="sandbox-note" role="note">
+            Adjust the policy knobs, then run the simulation many times to see how recovery,
+            escalation, and amount recovered respond — each reported as a mean with a
+            95% confidence interval. Runs in isolated in-memory databases and
+            <strong>skips the LLM</strong> for speed. The live agent's real retry cap, weights,
+            and salary-window behavior are unchanged.
+          </div>
+
+          <div class="sandbox-grid">
+            <div class="sandbox-controls">
+              <div class="sb-field">
+                <label for="sb-retry-cap">
+                  Retry cap
+                  <span class="sb-val num" id="sb-retry-cap-val">3</span>
+                </label>
+                <input type="range" id="sb-retry-cap" min="1" max="5" step="1" value="3"
+                       aria-label="Retry cap" aria-valuemin="1" aria-valuemax="5" aria-valuenow="3">
+                <span class="sb-sub">Max debit attempts before mandatory escalation (default 3).</span>
+              </div>
+
+              <div class="sb-field">
+                <label>Score weights <span class="muted">(must sum to 1.0)</span></label>
+                <div class="sb-weights">
+                  <div class="sb-weight">
+                    <span class="sb-wlabel">Success</span>
+                    <input type="number" id="sb-w-success" class="sb-wnum" min="0" max="1" step="0.05" value="0.40" aria-label="Success weight">
+                  </div>
+                  <div class="sb-weight">
+                    <span class="sb-wlabel">Tenure</span>
+                    <input type="number" id="sb-w-tenure" class="sb-wnum" min="0" max="1" step="0.05" value="0.20" aria-label="Tenure weight">
+                  </div>
+                  <div class="sb-weight">
+                    <span class="sb-wlabel">Retry</span>
+                    <input type="number" id="sb-w-retry" class="sb-wnum" min="0" max="1" step="0.05" value="0.20" aria-label="Retry weight">
+                  </div>
+                  <div class="sb-weight">
+                    <span class="sb-wlabel">Reason</span>
+                    <input type="number" id="sb-w-reason" class="sb-wnum" min="0" max="1" step="0.05" value="0.20" aria-label="Reason weight">
+                  </div>
+                </div>
+                <span class="sb-sub" id="sb-weight-sum">Sum: 1.00 ✓</span>
+              </div>
+
+              <div class="sb-field">
+                <label>Salary-window mode</label>
+                <div class="sb-toggle" id="sb-mode-toggle" role="group" aria-label="Salary window mode">
+                  <button type="button" class="sb-toggle-btn active" data-mode="adaptive">Adaptive (v2)</button>
+                  <button type="button" class="sb-toggle-btn" data-mode="generic_only">Generic only</button>
+                </div>
+                <span class="sb-sub">Adaptive personalises to each customer's payday; generic uses fallback windows.</span>
+              </div>
+
+              <div class="sb-field sb-runs">
+                <label for="sb-n-runs">
+                  Simulation runs
+                  <span class="sb-val num" id="sb-n-runs-val">30</span>
+                </label>
+                <input type="range" id="sb-n-runs" min="5" max="60" step="5" value="30"
+                       aria-label="Number of simulation runs" aria-valuemin="5" aria-valuemax="60" aria-valuenow="30">
+              </div>
+
+              <div class="sb-actions">
+                <button id="sb-run-btn" class="btn btn-primary">Run simulation (30×)</button>
+                <button id="sb-reset-btn" class="btn btn-ghost btn-sm">Reset to defaults</button>
+              </div>
+              <div id="sb-error" class="sb-error hidden" role="alert"></div>
+            </div>
+
+            <div class="sandbox-results">
+              <div id="sb-placeholder" class="sb-placeholder">
+                Set a policy and run the simulation to see recovery, escalation, and amount
+                recovered with 95% confidence intervals — plus a side-by-side comparison
+                against the current default policy.
+              </div>
+              <div id="sb-results" class="sb-results hidden"></div>
+            </div>
+          </div>
+        </section>
+
+      </section><!-- /#view-sandbox -->>
+      <!-- CHAOS SUITE -->
+      <section class="view" id="view-chaos" data-view="chaos" aria-label="Chaos Suite">
+        <section class="card chaos-panel">
+          <div class="card-head">
+            <div>
+              <h2 class="card-title">Chaos suite</h2>
+              <p class="card-sub">Adversarial test suite — attacks the system with malformed, malicious, and edge-case inputs.</p>
+            </div>
+            <span class="badge badge-error">Adversarial</span>
+          </div>
+          <div class="chaos-note">
+            Ten adversarial scenarios — replayed webhooks, negative/zero amounts, duplicate customer IDs, clock-skew
+            timestamps, malformed LLM responses, webhook-signature edge cases, extreme volume, malformed webhook bodies,
+            restart safety, and retry exhaustion. Each runs in its own fresh, isolated in-memory database.
+            <strong>Never touches the live demo data.</strong>
+          </div>
+          <div class="chaos-actions">
+            <button id="chaos-run-btn" class="btn btn-primary">Run chaos suite</button>
+          </div>
+          <div id="chaos-placeholder" class="chaos-placeholder">
+            Run the suite to attack the system with ten adversarial scenarios and see a PASS/FAIL report for each.
+          </div>
+          <div id="chaos-error" class="sb-error hidden" role="alert"></div>
+          <div id="chaos-results" class="chaos-results hidden" aria-live="polite"></div>
+        </section>
       </section>
-    </section>
+
+      <!-- CASE REPLAY -->
+      <section class="view" id="view-replay" data-view="replay" aria-label="Case Replay">
+        <section class="card replay-card">
+          <div class="card-head">
+            <div>
+              <h2 class="card-title">Case replay</h2>
+              <p class="card-sub">Step through any case full audit timeline from failure to final outcome.</p>
+            </div>
+          </div>
+          <p style="margin:0 0 16px;font-size:13px;color:var(--text-secondary);">
+            Select a case to walk through its recovery journey step-by-step: failure classification,
+            recoverability score, strategy selection, retry or dunning, and the final outcome.
+            Every step traces to a real <code>audit_log</code> row.
+          </p>
+          <div class="replay-search-row">
+            <label for="replay-search" class="hidden">Search by customer ID</label>
+            <input id="replay-search" class="ask-input" type="text"
+                   placeholder="Search by customer ID, failure reason, or status" autocomplete="off"
+                   aria-label="Search cases to replay">
+            <button id="replay-search-btn" class="btn btn-primary">Find case</button>
+          </div>
+          <div id="replay-case-list" class="replay-case-list hidden" role="list" aria-label="Matching cases"></div>
+          <div id="replay-timeline" class="replay-timeline hidden">
+            <div class="replay-case-header" id="replay-case-header" role="region" aria-label="Case header"></div>
+            <div class="replay-steps" id="replay-steps" role="list" aria-label="Recovery timeline steps"></div>
+            <div class="replay-controls">
+              <button id="replay-prev" class="btn btn-ghost btn-sm" disabled>
+                <svg width="12" height="12" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+                  <path d="M10 3L5 8l5 5" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                </svg>
+                Previous
+              </button>
+              <span class="replay-step-counter num" id="replay-step-counter" aria-live="polite"></span>
+              <button id="replay-next" class="btn btn-primary btn-sm">
+                Next
+                <svg width="12" height="12" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+                  <path d="M6 3l5 5-5 5" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                </svg>
+              </button>
+              <button id="replay-auto" class="btn btn-ghost btn-sm">Auto-play</button>
+              <button id="replay-reset" class="btn btn-ghost btn-sm">Pick another</button>
+            </div>
+          </div>
+          <div id="replay-empty" class="view-empty" role="status">
+            Run the agent first, then search for a case to replay its recovery journey.
+          </div>
+        </section>
+      </section>
+
+      <!-- REPORTS -->
+      <section class="view" id="view-reports" data-view="reports" aria-label="Reports">
+        <section class="card">
+          <div class="card-head">
+            <div>
+              <h2 class="card-title">Reports</h2>
+              <p class="card-sub">Export the current run as a CSV summary. Every row traces to a logged audit event.</p>
+            </div>
+          </div>
+          <p style="margin:0 0 20px;font-size:13px;color:var(--text-secondary);line-height:1.7;">
+            Download a machine-readable summary of the current run: per-case outcomes,
+            recoverability scores, compliance status, and money figures. The same figures
+            appear on Overview and Compliance and are re-checked by the correctness audit.
+          </p>
+          <div class="reports-actions">
+            <a class="btn btn-primary btn-lg" href="/api/export">
+              <svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+                <path d="M8 2v9M5 8l3 3 3-3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+                <path d="M2 13h12" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+              </svg>
+              Download summary (CSV)
+            </a>
+          </div>
+        </section>
+      </section>
 
     </div><!-- /#dashboard -->
-    </main>
-  </div><!-- /.app-shell -->
 
-  <!-- Command palette (Phase 2): Cmd/Ctrl+K. Jump to sections, jump to a case by
-       customer ID, or trigger key actions. Pure navigation/UI; no API/logic changes. -->
-  <div id="cmdk-overlay" class="cmdk-overlay hidden" role="dialog" aria-modal="true" aria-label="Command palette">
-    <div id="cmdk" class="cmdk">
-      <div class="cmdk-input-row">
-        <span class="cmdk-hint-ico" aria-hidden="true">⌘</span>
-        <input id="cmdk-input" class="cmdk-input" type="text" autocomplete="off" spellcheck="false"
-               placeholder="Jump to a section, search a customer ID, or run an action…" aria-label="Command palette search">
-        <kbd class="cmdk-esc">Esc</kbd>
-      </div>
-      <ul id="cmdk-list" class="cmdk-list" role="listbox" aria-label="Command palette results"></ul>
-      <div id="cmdk-loading" class="cmdk-loading hidden">
-        <span class="spinner"></span><span>Loading cases…</span>
-      </div>
-      <div id="cmdk-empty" class="cmdk-empty hidden">No matches. Try a section name, a customer ID, or "run".</div>
-      <div class="cmdk-foot">
-        <span><kbd>↑</kbd><kbd>↓</kbd> navigate</span>
-        <span><kbd>↵</kbd> select</span>
-        <span><kbd>esc</kbd> close</span>
-      </div>
+  </main><!-- /.content -->
+
+</div><!-- /.app-shell -->
+
+<!-- Command palette -->
+<div id="cmdk-overlay" class="cmdk-overlay hidden" role="dialog" aria-modal="true" aria-label="Command palette">
+  <div id="cmdk" class="cmdk">
+    <div class="cmdk-input-row">
+      <svg class="cmdk-hint-ico" width="18" height="18" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+        <circle cx="7" cy="7" r="4.5" stroke="currentColor" stroke-width="1.5"/>
+        <path d="M10.5 10.5L13 13" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+      </svg>
+      <input id="cmdk-input" class="cmdk-input" type="text" autocomplete="off" spellcheck="false"
+             placeholder="Jump to a section, search a customer ID, or run an action"
+             aria-label="Command palette search" aria-autocomplete="list" aria-controls="cmdk-list">
+      <kbd class="cmdk-esc">Esc</kbd>
+    </div>
+    <ul id="cmdk-list" class="cmdk-list" role="listbox" aria-label="Command palette results"></ul>
+    <div id="cmdk-loading" class="cmdk-loading hidden">
+      <span class="spinner" aria-hidden="true"></span><span>Loading cases</span>
+    </div>
+    <div id="cmdk-empty" class="cmdk-empty hidden" role="status">No matches. Try a section name, a customer ID, or "run".</div>
+    <div class="cmdk-foot" aria-hidden="true">
+      <span><kbd>↑</kbd><kbd>↓</kbd> navigate</span>
+      <span><kbd>↵</kbd> select</span>
+      <span><kbd>Esc</kbd> close</span>
     </div>
   </div>
+</div>
 
-  <!-- Keyboard-shortcuts help overlay (Phase 4): opened with "?" or the header help
-       button. Lists the available shortcuts. Esc / backdrop click closes it. -->
-  <div id="help-overlay" class="help-overlay hidden" role="dialog" aria-modal="true" aria-label="Keyboard shortcuts">
-    <div class="help-modal">
-      <div class="help-head">
-        <h2>Keyboard shortcuts</h2>
-        <button id="help-close" class="btn btn-ghost btn-sm">Close</button>
-      </div>
-      <div class="help-body">
-        <div class="help-row"><span class="help-keys"><kbd>?</kbd></span><span class="help-desc">Show this help</span></div>
-        <div class="help-row"><span class="help-keys"><kbd>⌘</kbd><span class="help-plus">/</span><kbd>Ctrl</kbd><kbd>K</kbd></span><span class="help-desc">Open the command palette</span></div>
-        <div class="help-row"><span class="help-keys"><kbd>g</kbd><kbd>o</kbd></span><span class="help-desc">Go to Overview</span></div>
-        <div class="help-row"><span class="help-keys"><kbd>g</kbd><kbd>c</kbd></span><span class="help-desc">Go to Cases</span></div>
-        <div class="help-row"><span class="help-keys"><kbd>r</kbd></span><span class="help-desc">Run the agent</span></div>
-        <div class="help-row"><span class="help-keys"><kbd>/</kbd></span><span class="help-desc">Focus the "Ask the data" search</span></div>
-        <div class="help-row"><span class="help-keys"><kbd>Esc</kbd></span><span class="help-desc">Close any open panel, drawer, or overlay</span></div>
-      </div>
-      <div class="help-foot muted">Shortcuts are ignored while typing in a text field.</div>
+<!-- Keyboard shortcuts overlay -->
+<div id="help-overlay" class="help-overlay hidden" role="dialog" aria-modal="true" aria-label="Keyboard shortcuts">
+  <div class="help-modal">
+    <div class="help-head">
+      <h2>Keyboard shortcuts</h2>
+      <button id="help-close" class="btn btn-ghost btn-sm">Close</button>
     </div>
+    <div class="help-body">
+      <div class="help-row"><span class="help-keys"><kbd>?</kbd></span><span class="help-desc">Show this help</span></div>
+      <div class="help-row"><span class="help-keys"><kbd>⌘</kbd><span class="help-plus">/</span><kbd>Ctrl</kbd><kbd>K</kbd></span><span class="help-desc">Open command palette</span></div>
+      <div class="help-row"><span class="help-keys"><kbd>g</kbd> <kbd>o</kbd></span><span class="help-desc">Go to Overview</span></div>
+      <div class="help-row"><span class="help-keys"><kbd>g</kbd> <kbd>c</kbd></span><span class="help-desc">Go to Cases</span></div>
+      <div class="help-row"><span class="help-keys"><kbd>r</kbd></span><span class="help-desc">Run the agent</span></div>
+      <div class="help-row"><span class="help-keys"><kbd>/</kbd></span><span class="help-desc">Focus "Ask the data" search</span></div>
+      <div class="help-row"><span class="help-keys"><kbd>Esc</kbd></span><span class="help-desc">Close any panel, drawer, or overlay</span></div>
+    </div>
+    <div class="help-foot muted">Shortcuts are ignored while typing in a text field.</div>
   </div>
+</div>
 
-  <!-- Case detail drawer -->
-  <div id="drawer-overlay" class="drawer-overlay hidden"></div>
-  <aside id="drawer" class="drawer hidden">
-    <div class="drawer-head">
-      <h2 id="drawer-title">Case detail</h2>
-      <button id="drawer-close" class="btn btn-ghost">Close</button>
-    </div>
-    <div id="drawer-body" class="drawer-body"></div>
-  </aside>
+<!-- Case detail drawer -->
+<div id="drawer-overlay" class="drawer-overlay hidden" aria-hidden="true"></div>
+<aside id="drawer" class="drawer hidden" role="complementary" aria-label="Case detail">
+  <div class="drawer-head">
+    <h2 id="drawer-title">Case detail</h2>
+    <button id="drawer-close" class="btn btn-ghost btn-sm" aria-label="Close case detail">
+      <svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+        <path d="M3 3l10 10M13 3L3 13" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+      </svg>
+      Close
+    </button>
+  </div>
+  <div id="drawer-body" class="drawer-body"></div>
+</aside>
 
-  <footer class="footer">
-    <span>Mandate Rescue — every number on this page traces to a logged audit event.</span>
-  </footer>
+<footer class="footer" role="contentinfo">
+  <span>Mandate Rescue &mdash; every number on this page traces to a logged audit event.</span>
+</footer>
 
-  <script src="{{ url_for('static', filename='app.js') }}"></script>
+<script src="{{ url_for('static', filename='app.js') }}"></script>
 </body>
 </html>
