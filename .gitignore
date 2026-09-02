@@ -21,7 +21,14 @@ Thumbs.db
 .pytest_cache/
 *.egg-info/
 scripts/dev/*.jpg
+.coverage
+htmlcov/
 
 # Docker
 *.db-shm
 *.db-wal
+
+# Generated ML artifacts — rebuild with: python backend/ml/train_model.py
+backend/ml/model.pkl
+backend/ml/training_data.csv
+backend/ml/metrics.json

@@ -1,27 +1,30 @@
 Flask==3.0.3
 
+# Production WSGI server (used in Dockerfile / docker-compose).
+# Never run the Flask dev server (python backend/app.py) in production.
+gunicorn==22.0.0
+
 # ML validation/research layer (backend/ml/). This model is ADDITIVE: it produces
 # its own validated recovery-likelihood prediction shown alongside the rule-based
 # score. It does NOT drive any agent/compliance/scoring decision.
-scikit-learn==1.9.0
-joblib==1.5.3
-pandas==3.0.5
-numpy==2.5.2
+scikit-learn==1.5.2
+joblib==1.4.2
+pandas==2.2.3
+numpy==1.26.4
 
 # SHAP explainability for the additive ML layer (backend/ml/explain.py). Provides
 # per-case feature-contribution breakdowns and a global feature-importance summary.
 # Like the model itself, this is an ADDITIVE validation/interpretability layer and
 # does NOT drive any agent/scoring/compliance decision.
-shap==0.52.0
+shap==0.45.1
 
-# LLM integration (backend/llm_client.py) uses the standard-library urllib to call
-# the Groq / OpenAI-compatible chat-completions endpoint, so it needs NO extra pip
-# package. It only requires the GROQ_API_KEY environment variable to be set.
-# Set it either in a local .env file (loaded automatically via python-dotenv) or
-# as a real env var:
-#   PowerShell:  $env:GROQ_API_KEY = "gsk_..."
-# Optional overrides: LLM_MODEL, LLM_API_BASE, LLM_TIMEOUT.
-# Without a key, the app transparently falls back to the deterministic templates.
+# Statistical confidence intervals in simulation_runner.py.
+# When installed, uses Student's t-distribution (honest for small n like 30);
+# without it, falls back to the standard normal approximation (z=1.96 for 95%).
+scipy==1.13.1
+
+# LLM integration (backend/llm_client.py) uses stdlib urllib — no extra package.
+# Set GROQ_API_KEY in .env; without it the app falls back to deterministic templates.
 
 # Loads a local .env file into the environment on startup (optional but convenient).
 python-dotenv==1.0.1
