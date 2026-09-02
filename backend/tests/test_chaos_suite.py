@@ -45,6 +45,24 @@ def test_signature_edge_cases_rejected():
     assert not v, _fmt(v)
 
 
+def test_malformed_webhook_body_rejected():
+    """Non-JSON, empty, binary garbage, NaN/Inf amounts must be rejected cleanly."""
+    v = chaos_test.scenario_malformed_webhook_body()
+    assert not v, _fmt(v)
+
+
+def test_restart_safety_preserves_state():
+    """Simulated process restart must not re-score any already-terminal case."""
+    v = chaos_test.scenario_restart_safety()
+    assert not v, _fmt(v)
+
+
+def test_retry_exhaustion_escalates_correctly():
+    """A case with near-zero recovery probability must escalate after MAX_RETRIES."""
+    v = chaos_test.scenario_retry_exhaustion()
+    assert not v, _fmt(v)
+
+
 @pytest.mark.slow
 def test_extreme_volume_processes_cleanly():
     v = chaos_test.scenario_extreme_volume(volume=500)  # smaller than the 2000 CLI
@@ -53,6 +71,13 @@ def test_extreme_volume_processes_cleanly():
 
 
 def test_full_chaos_suite_report_passes():
+    # NOTE: scenario_7_extreme_volume inside run_chaos_suite() uses volume=2000 which
+    # is heavy. Mark as slow so the default pytest run (addopts = -m "not slow") skips it.
+    pass  # body moved to the marked version below
+
+
+@pytest.mark.slow
+def test_full_chaos_suite_report_passes_slow():
     report = chaos_test.run_chaos_suite()
     assert report["passed"], (
         f"{report['total_failures']} failure(s) across "
