@@ -427,6 +427,8 @@ def translate_query(question):
 
     # Budget must be generous enough that the JSON object is never truncated
     # mid-value (a cut-off like {"amount_min": would fail to parse -> {}).
+    if _SUPPRESS_LLM:
+        return None
     text = _chat(_QUERY_SYSTEM, "Question: " + q, max_tokens=512, temperature=0.0)
     if not text:
         return None
@@ -483,5 +485,5 @@ def summarize_results(question, count, sample):
         f"Sample of matches (not the full set): {json.dumps(sample_facts, default=str)}\n"
         "Write one sentence stating what was found, leading with the exact count."
     )
-    text = _chat(system, user, max_tokens=256, temperature=0.3)
+    text = _chat(system, user, max_tokens=256, temperature=0.3) if not _SUPPRESS_LLM else None
     return text if text else fallback

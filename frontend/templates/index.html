@@ -153,6 +153,18 @@
               <span class="nav-label">Analytics</span>
             </button>
           </li>
+          <li>
+            <button class="nav-item" data-view="learning">
+              <span class="nav-ico" aria-hidden="true">
+                <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+                  <circle cx="8" cy="6" r="2.5" stroke="currentColor" stroke-width="1.5"/>
+                  <path d="M3 13c0-2.76 2.24-5 5-5s5 2.24 5 5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+                  <path d="M11 4l1.5-1.5M12.5 5.5L14 4M11.5 7h2" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/>
+                </svg>
+              </span>
+              <span class="nav-label">Learning</span>
+            </button>
+          </li>
         </ul>
       </div>
 
@@ -1058,6 +1070,183 @@
         </section>
 
       </section><!-- /#view-analytics -->
+
+      <!-- ================================================================
+           VIEW: LEARNING  (Phase 6 — Closed-Loop Adaptive Optimization)
+           ================================================================ -->
+      <section class="view" id="view-learning" data-view="learning" aria-label="Learning">
+
+        <!-- ── Flow header ── -->
+        <div class="learning-flow-header">
+          <span class="lf-step lf-step-active">Current Policy</span>
+          <span class="lf-arrow" aria-hidden="true">→</span>
+          <span class="lf-step">Evidence</span>
+          <span class="lf-arrow" aria-hidden="true">→</span>
+          <span class="lf-step">Experiments</span>
+          <span class="lf-arrow" aria-hidden="true">→</span>
+          <span class="lf-step">Recommendations</span>
+          <span class="lf-arrow" aria-hidden="true">→</span>
+          <span class="lf-step">Approval</span>
+          <span class="lf-arrow" aria-hidden="true">→</span>
+          <span class="lf-step">New Policy</span>
+          <span class="lf-arrow" aria-hidden="true">→</span>
+          <span class="lf-step">Measure Again</span>
+        </div>
+
+        <!-- ── KPI row ── -->
+        <section class="kpi-row" id="learning-kpi-row" aria-label="Learning key metrics">
+          <div class="card kpi">
+            <span class="kpi-label">Current recovery rate</span>
+            <span class="kpi-value num" id="lkpi-recovery-rate">—</span>
+          </div>
+          <div class="card kpi">
+            <span class="kpi-label">Policy version</span>
+            <span class="kpi-value num" id="lkpi-policy-version">—</span>
+          </div>
+          <div class="card kpi">
+            <span class="kpi-label">Open recommendations</span>
+            <span class="kpi-value num accent-ok" id="lkpi-open-recs">—</span>
+          </div>
+          <div class="card kpi">
+            <span class="kpi-label">Real test outcomes</span>
+            <span class="kpi-value num" id="lkpi-real-outcomes">—</span>
+          </div>
+        </section>
+
+        <!-- ── Current Policy ── -->
+        <section class="card" id="learning-policy-card" aria-label="Current policy">
+          <div class="card-head">
+            <h2 class="card-title">Current policy</h2>
+            <span class="badge badge-neutral" id="learning-policy-source-badge">rule-based default</span>
+          </div>
+          <p class="card-sub">The active strategy configuration governing all recovery decisions.</p>
+          <div id="learning-policy-body"><p class="muted">Loading…</p></div>
+          <div id="learning-policy-perf" style="margin-top:12px;"></div>
+        </section>
+
+        <!-- ── Data Provenance / Evidence ── -->
+        <section class="card" id="learning-provenance-card" aria-label="Data provenance">
+          <div class="card-head">
+            <h2 class="card-title">Evidence &amp; data provenance</h2>
+            <span class="badge badge-info">Actual</span>
+          </div>
+          <p class="card-sub">Every strategy performance figure traces to this data source breakdown. Real Razorpay Test Mode outcomes are the most reliable evidence.</p>
+          <div id="learning-provenance-body"><p class="muted">Loading…</p></div>
+        </section>
+
+        <!-- ── Strategy Performance ── -->
+        <section class="card" id="learning-strategy-perf-card" aria-label="Strategy performance">
+          <div class="card-head">
+            <h2 class="card-title">Strategy performance by dimension</h2>
+            <span class="badge badge-info" id="learning-strategy-badge">Actual</span>
+          </div>
+          <p class="card-sub">Observed recovery rates per strategy, grouped by dimension. Sample sizes shown. Rows with insufficient data (&lt;10 observations) are flagged.</p>
+          <div id="learning-strategy-body"><p class="muted">Loading…</p></div>
+        </section>
+
+        <!-- ── Strategy Drift ── -->
+        <section class="card hidden" id="learning-drift-card" aria-label="Strategy drift alerts" aria-live="polite">
+          <div class="card-head">
+            <h2 class="card-title">Strategy drift detection</h2>
+            <span class="badge badge-warning">Warning</span>
+          </div>
+          <p class="card-sub">Strategies whose recovery rate has degraded significantly in the recent window vs baseline.</p>
+          <div id="learning-drift-body"></div>
+        </section>
+
+        <!-- ── Experiments ── -->
+        <section class="card" id="learning-experiments-card" aria-label="Strategy experiments">
+          <div class="card-head">
+            <h2 class="card-title">Strategy experiments</h2>
+            <button class="btn btn-ghost btn-sm" id="btn-new-experiment" aria-label="Create new experiment">+ New experiment</button>
+          </div>
+          <p class="card-sub">Controlled A/B comparisons between strategies. Results include control vs treatment recovery rate, incremental revenue, and confidence. Simulation-only experiments are clearly labelled.</p>
+          <div id="learning-experiments-body"><p class="muted">Loading…</p></div>
+        </section>
+
+        <!-- ── New Experiment Form (hidden by default) ── -->
+        <section class="card hidden" id="new-experiment-form-card" aria-label="Create experiment">
+          <div class="card-head">
+            <h2 class="card-title">New experiment</h2>
+            <button class="btn btn-ghost btn-sm" id="btn-cancel-experiment">Cancel</button>
+          </div>
+          <form id="new-experiment-form" class="exp-form" novalidate>
+            <div class="form-row">
+              <label class="form-label" for="exp-name">Experiment name</label>
+              <input class="form-input" id="exp-name" type="text" placeholder="e.g. Test 48h retry for insufficient_funds" required>
+            </div>
+            <div class="form-row">
+              <label class="form-label" for="exp-control">Control strategy</label>
+              <select class="form-select" id="exp-control">
+                <option value="salary-window retry">salary-window retry</option>
+                <option value="re-authorization link">re-authorization link</option>
+                <option value="silent quick retry">silent quick retry</option>
+                <option value="immediate escalation">immediate escalation</option>
+                <option value="higher-limit re-authorization">higher-limit re-authorization</option>
+              </select>
+            </div>
+            <div class="form-row">
+              <label class="form-label" for="exp-treatment">Treatment strategy</label>
+              <select class="form-select" id="exp-treatment">
+                <option value="salary-window retry">salary-window retry</option>
+                <option value="re-authorization link">re-authorization link</option>
+                <option value="silent quick retry">silent quick retry</option>
+                <option value="immediate escalation">immediate escalation</option>
+                <option value="higher-limit re-authorization">higher-limit re-authorization</option>
+              </select>
+            </div>
+            <div class="form-row-2col">
+              <div class="form-row">
+                <label class="form-label" for="exp-merchant">Merchant category (optional)</label>
+                <select class="form-select" id="exp-merchant">
+                  <option value="">All merchants</option>
+                  <option value="subscription">subscription</option>
+                  <option value="emi">emi</option>
+                  <option value="insurance">insurance</option>
+                  <option value="utility">utility</option>
+                </select>
+              </div>
+              <div class="form-row">
+                <label class="form-label" for="exp-reason">Failure reason (optional)</label>
+                <select class="form-select" id="exp-reason">
+                  <option value="">All reasons</option>
+                  <option value="insufficient_funds">insufficient_funds</option>
+                  <option value="mandate_expired">mandate_expired</option>
+                  <option value="bank_technical_error">bank_technical_error</option>
+                  <option value="mandate_revoked">mandate_revoked</option>
+                </select>
+              </div>
+            </div>
+            <div class="form-row">
+              <label class="form-label" for="exp-min-sample">Minimum sample per arm</label>
+              <input class="form-input" id="exp-min-sample" type="number" min="5" max="500" value="10">
+            </div>
+            <div class="form-actions">
+              <button type="submit" class="btn btn-primary">Create experiment</button>
+            </div>
+          </form>
+        </section>
+
+        <!-- ── Recommendations ── -->
+        <section class="card" id="learning-recommendations-card" aria-label="Policy recommendations">
+          <div class="card-head">
+            <h2 class="card-title">Recommended improvements</h2>
+            <button class="btn btn-ghost btn-sm" id="btn-generate-recs" title="Scan evidence and generate new recommendations">Refresh</button>
+          </div>
+          <p class="card-sub">Data-backed recommendations. Each shows what to change, why, estimated impact, confidence, and data source. No recommendation is created without evidence meeting the minimum threshold.</p>
+          <div id="learning-recs-body"><p class="muted">Loading…</p></div>
+        </section>
+
+        <!-- ── Policy History ── -->
+        <section class="card" id="learning-policy-history-card" aria-label="Policy version history">
+          <div class="card-head">
+            <h2 class="card-title">Policy version history</h2>
+          </div>
+          <p class="card-sub">Every policy version is immutable. Only status transitions are recorded. Historical performance is never modified.</p>
+          <div id="learning-history-body"><p class="muted">Loading…</p></div>
+        </section>
+
+      </section><!-- /#view-learning -->>
 
     </div><!-- /#dashboard -->
 

@@ -1055,12 +1055,28 @@ def run_agent_traced():
     summary dict {done: True, processed, status_counts}. Uses the identical seeded
     RNG and triage order as run_agent(), so outcomes are unchanged. The caller is
     responsible for pacing (visual delays) — this generator itself does not sleep.
+
+    LLM narration is suppressed during the stream so the generator never blocks on
+    a remote Groq call mid-yield. The feed cards don't display reasoning text, so
+    nothing visible is lost. The budget is restored to unrestricted after the run
+    so drawer/ask endpoints generate narration lazily on demand (with cache).
     """
     rng = random.Random(RUN_SEED)
     conn = db.get_connection()
+    # Suppress ALL LLM calls during the live stream. The SSE generator is
+    # synchronous — any blocking Groq call (timeout, rate-limit, slow network)
+    # starves the stream and causes the UI to freeze partway. Narration is still
+    # written to audit_log as the deterministic ground-truth fallback, and the
+    # drawer regenerates it (with the LLM) on first open after the run.
+    #
+    # Save the prior budget state so a concurrent drawer/ask request that
+    # restores its own budget doesn't leave us suppressed, and vice versa.
+    # (Flask dev server is threaded=True — module globals are shared.)
+    _prior_suppress = llm_client._SUPPRESS_LLM
+    _prior_budget = llm_client._LIVE_BUDGET
+    llm_client.set_live_budget([], suppress=True)
     try:
         all_cases = db.get_all_cases(conn)
-        _apply_llm_budget(all_cases)
         cases = TriageAgent.order(all_cases)
         pipeline = RecoveryPipeline(conn, rng)
         processed = 0
@@ -1074,6 +1090,12 @@ def run_agent_traced():
             statuses[row["case_status"]] = statuses.get(row["case_status"], 0) + 1
     finally:
         conn.close()
+        # Restore the budget state that was in effect before this run started,
+        # so drawer / ask endpoints (which run on separate threads) are unaffected.
+        llm_client.set_live_budget(
+            None if _prior_budget is None else list(_prior_budget),
+            suppress=_prior_suppress,
+        )
     yield {"done": True, "processed": processed, "status_counts": statuses}
 
 

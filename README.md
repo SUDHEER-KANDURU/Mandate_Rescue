@@ -1,4 +1,4 @@
-# Mandate Rescue
+﻿# Mandate Rescue
 
 [![CI](https://github.com/OWNER/Mandate_Rescue/actions/workflows/ci.yml/badge.svg)](https://github.com/OWNER/Mandate_Rescue/actions/workflows/ci.yml)
 
@@ -614,6 +614,327 @@ python benchmark.py --n-runs 30 --seed 42
 Compares Baseline A (naive, 1 attempt), Baseline B (dumb persistence, 3 attempts), and Mandate Rescue (full pipeline). All use the same probability model — only strategy differs. Results are Monte Carlo means ± 95% CI (Student's t).
 
 ---
+
+## Phase 6 — Closed-Loop Adaptive Revenue Optimization
+
+Phase 6 turns Mandate Rescue from an intelligent recovery engine into an adaptive revenue-optimization system. The learning loop is:
+
+`
+PREDICT → DECIDE → ACT → OBSERVE OUTCOME → MEASURE → COMPARE
+    → LEARN → RECOMMEND → MERCHANT APPROVES → POLICY ACTIVATES → REPEAT
+`
+
+### Closed-Loop Architecture
+
+`
+Recovery decision
+      │
+      ▼
+ Execution (real_test / simulation)
+      │
+      ▼
+ Outcome observed
+      │
+      ▼
+ outcome_attribution.py   ← writes strategy_performance (3 dimensions, provenance-tagged)
+      │
+      ▼
+ segment_learning.py      ← fallback hierarchy: merchant → failure_reason → global → rule_based
+      │
+      ▼
+ policy_engine.py         ← generate_recommendations (evidence-gated, deduplicated)
+      │
+      ▼
+ Merchant reviews
+      │
+      ▼
+ approve_recommendation() ← creates + activates policy_version
+      │
+      ▼
+ Active policy            ← governs future recovery decisions
+      │
+      ▼
+ record_current_policy_performance() ← measures before/after
+      │
+      └──────────────────────────────────────────────────────► REPEAT
+`
+
+### New Phase 6 Database Tables
+
+| Table | Purpose |
+|---|---|
+| strategy_performance | Durable per-dimension strategy stats with provenance |
+| experiments | Controlled A/B experiment definitions |
+| experiment_assignments | Case-to-arm mapping (deterministic hash, immutable) |
+| experiment_outcomes | Final outcome per case per experiment (write-once) |
+| policy_versions | Immutable version history (DRAFT→RECOMMENDED→APPROVED→ACTIVE→DEPRECATED) |
+| policy_performance | Measured recovery rate per version after activation |
+| policy_recommendations | Data-backed recommendations with evidence trail |
+| policy_audit_log | Append-only governance action record |
+
+### Strategy Evaluation Methodology
+
+Performance is tracked per dimension: global, ailure_reason, merchant_category.
+Each dimension × strategy × provenance is a separate row — REAL_TEST is never silently combined with SIMULATION.
+
+**Fallback hierarchy** (segment_learning.py):
+1. Merchant-specific (≥ 10 observations required)
+2. Failure-reason-specific
+3. Global
+4. Rule-based default
+
+A strategy change is only recommended when it outperforms the default by ≥ 3pp AND has ≥ 10 observations.
+
+### Experimentation Methodology
+
+- **Arm assignment**: deterministic SHA-256 hash — same case always lands in same arm
+- **Outcome recording**: UNIQUE constraint prevents duplicate counts
+- **Minimum sample**: configurable (default 10 per arm). Below threshold returns sufficient_data: false — never manufactures a result
+- **Statistical test**: two-proportion z-test at ≥ 30 observations; confidence: high (z ≥ 2.576), moderate (z ≥ 1.96), low (z ≥ 1.282)
+- **Incremental revenue**: rate_diff × treatment_amount_attempted. Always labelled [ESTIMATE]. Total recovered ≠ incremental
+
+### Counterfactual Methodology
+
+Every counterfactual output:
+1. States the observed outcome separately from the estimated counterfactual
+2. Labels every estimate [ESTIMATE — counterfactual, not causal proof]
+3. Never calls simulated results "real-world performance"
+
+### Evidence / Data Provenance
+
+| Tag | Meaning |
+|---|---|
+| REAL_TEST | source=azorpay_live AND execution_mode=eal_test |
+| SIMULATION | execution_mode=simulation |
+| HISTORICAL | Pre-Phase-4 pipeline run (no recovery jobs) |
+| ESTIMATE | Probability-model output (no execution observed) |
+
+The Learning dashboard shows a provenance breakdown and warns prominently when no REAL_TEST outcomes exist.
+
+### Policy Governance
+
+Policy version lifecycle: DRAFT → RECOMMENDED → UNDER_REVIEW → APPROVED → ACTIVE → DEPRECATED / ROLLED_BACK
+
+- Versions are **immutable** after creation — only status transitions allowed
+- New version only created on **explicit named approval**
+- Activating a version **auto-deprecates** the previous active one
+- Rollback **preserves** all historical performance records — history is never rewritten
+- Every governance action recorded in policy_audit_log with actor, timestamp, and status change
+
+**Insufficient-data protection:** generate_recommendations() only fires when sample ≥ 10 AND improvement ≥ 3pp. Returns [] otherwise — never manufactures confidence.
+
+**mandate_revoked safety gate:** est_strategy_for_case() always returns "immediate escalation" for mandate_revoked, regardless of observed data. This rule cannot be overridden by the learning system.
+
+### Strategy Drift Detection
+
+Compares performance in the recent window (default: last 30 days) vs all prior data. A drift alert is raised when the relative drop exceeds 15%. Both windows must have ≥ 5 cases; under-sampled strategies are surfaced separately, never silently ignored.
+
+### Limitations
+
+1. **No causal proof.** Experiment results are correlational within the experiment design. Causal claims require a properly powered randomized controlled trial.
+2. **Synthetic data dominates until real runs occur.** All 180 seed cases are HISTORICAL/SIMULATION. No REAL_TEST data exists until real Razorpay Test Mode webhooks are received and executed.
+3. **Small samples.** 180 cases across 4 × 4 segments = ~11 cases per cell. Most cells stay below MIN_SAMPLE and produce no recommendations — this is correct behaviour, not a bug.
+4. **No time-series aggregation.** strategy_performance accumulates totals. Rolling windows in strategy_drift use ailure_date as a proxy for execution date.
+5. **Single-tenant.** Policy engine uses merchant_category = "all" as the global namespace. Per-merchant scoping requires a merchant_id column throughout.
+
+---
+
+## Phase 6 API Reference
+
+All Phase 6 endpoints: /api/learning/*. Mutating endpoints require X-API-Key.
+
+| Method | Endpoint | Auth | Description |
+|---|---|---|---|
+| GET | /api/learning/attribution/summary | — | Attribution coverage and provenance breakdown |
+| POST | /api/learning/backfill | ✓ | Backfill strategy_performance from audit log (idempotent) |
+| GET | /api/learning/strategy-performance | — | All strategy performance records |
+| GET | /api/learning/segment-learning | — | Full learning summary across all dimensions |
+| GET | /api/learning/strategy-drift | — | Strategy drift alerts |
+| GET | /api/learning/experiments | — | List experiments |
+| POST | /api/learning/experiments/create | ✓ | Create A/B experiment |
+| GET | /api/learning/experiments/<id> | — | Experiment status + evaluation |
+| POST | /api/learning/experiments/complete | ✓ | Mark experiment completed |
+| GET | /api/learning/recommendations | — | List recommendations |
+| POST | /api/learning/recommendations/generate | ✓ | Generate recommendations from evidence |
+| GET | /api/learning/recommendations/<id> | — | Full recommendation + evidence trail |
+| POST | /api/learning/recommendations/approve | ✓ | Approve → creates + activates policy version |
+| POST | /api/learning/recommendations/reject | ✓ | Reject with reason |
+| GET | /api/learning/policy/active | — | Currently active policy |
+| GET | /api/learning/policy/history | — | Full version history |
+| GET | /api/learning/policy/<version_id> | — | Version detail + performance + audit |
+| POST | /api/learning/policy/measure | ✓ | Record current performance snapshot |
+| POST | /api/learning/policy/rollback | ✓ | Roll back to a previous version |
+| GET | /api/learning/policy/audit-log | — | Full governance audit log |
+| GET | /api/learning/dashboard | — | Single-call Learning view payload |
+
+---
+
+
+---
+
+## Phase 6 — Closed-Loop Adaptive Revenue Optimization
+
+Phase 6 turns Mandate Rescue from an intelligent recovery engine into an adaptive revenue-optimization system. The learning loop is:
+
+```
+PREDICT → DECIDE → ACT → OBSERVE OUTCOME → MEASURE → COMPARE
+    → LEARN → RECOMMEND → MERCHANT APPROVES → POLICY ACTIVATES → REPEAT
+```
+
+### Closed-Loop Architecture
+
+```
+Recovery decision
+      │
+      ▼
+ Execution (real_test / simulation)
+      │
+      ▼
+ Outcome observed
+      │
+      ▼
+ outcome_attribution.py   ← writes strategy_performance (3 dimensions, provenance-tagged)
+      │
+      ▼
+ segment_learning.py      ← fallback hierarchy: merchant → failure_reason → global → rule_based
+      │
+      ▼
+ policy_engine.py         ← generate_recommendations (evidence-gated, deduplicated)
+      │
+      ▼
+ Merchant reviews
+      │
+      ▼
+ approve_recommendation() ← creates + activates policy_version
+      │
+      ▼
+ Active policy            ← governs future recovery decisions
+      │
+      ▼
+ record_current_policy_performance() ← measures before/after
+      │
+      └─────────────────────────────────────────────────────────► REPEAT
+```
+
+### New Phase 6 Database Tables
+
+| Table | Purpose |
+|---|---|
+| `strategy_performance` | Durable per-dimension strategy stats with provenance tags |
+| `experiments` | Controlled A/B experiment definitions |
+| `experiment_assignments` | Case-to-arm mapping (deterministic hash, immutable) |
+| `experiment_outcomes` | Final outcome per case per experiment (write-once) |
+| `policy_versions` | Immutable version history: DRAFT → RECOMMENDED → UNDER_REVIEW → APPROVED → ACTIVE → DEPRECATED/ROLLED_BACK |
+| `policy_performance` | Measured recovery rate per version after activation |
+| `policy_recommendations` | Data-backed recommendations with full evidence trail |
+| `policy_audit_log` | Append-only governance action record |
+
+### Strategy Evaluation Methodology
+
+Performance is tracked per dimension: `global`, `failure_reason`, `merchant_category`.
+Each (dimension × strategy × provenance) combination is a separate row — `REAL_TEST` is never silently combined with `SIMULATION`.
+
+**Fallback hierarchy** (`segment_learning.py`):
+1. Merchant-specific (≥ 10 observations required)
+2. Failure-reason-specific
+3. Global
+4. Rule-based default (no data at all)
+
+A strategy change is only recommended when the alternative outperforms the default by ≥ 3 percentage points **and** has ≥ 10 observations.
+
+### Experimentation Methodology
+
+- **Arm assignment**: deterministic SHA-256 hash of `(experiment_id, customer_id)` — same case always lands in the same arm regardless of how many times assignment runs
+- **Outcome recording**: UNIQUE constraint on `(experiment_id, customer_id)` prevents duplicate counts
+- **Minimum sample**: configurable (default 10 per arm). Below threshold `evaluate_experiment()` returns `sufficient_data: false` — never manufactures a result
+- **Statistical test**: two-proportion z-test at ≥ 30 observations per arm; confidence: `high` (z ≥ 2.576), `moderate` (z ≥ 1.96), `low` (z ≥ 1.282), `very_low` otherwise
+- **Incremental revenue**: estimated as `rate_diff × treatment_amount_attempted`. Always labelled `data_type: "estimate"`. Total recovered revenue ≠ incremental revenue
+
+### Counterfactual Methodology
+
+Every counterfactual output:
+1. States the **observed** outcome separately from the **estimated** counterfactual
+2. Labels every estimate `[ESTIMATE — counterfactual, not causal proof]`
+3. Uses only observed rate difference × observed amount as the incremental estimate
+4. Never calls simulated results "real-world performance"
+
+### Evidence / Data Provenance
+
+Every strategy performance record carries a `provenance` tag:
+
+| Tag | Meaning |
+|---|---|
+| `REAL_TEST` | `case.source = razorpay_live` AND `execution_mode = real_test` |
+| `SIMULATION` | `execution_mode = simulation` |
+| `HISTORICAL` | Pre-Phase-4 agent pipeline run (no recovery jobs existed yet) |
+| `ESTIMATE` | Probability-model output — no execution observed |
+
+The Learning dashboard shows a provenance breakdown and warns prominently when no REAL_TEST observations exist.
+
+### Policy Governance
+
+Version lifecycle:
+```
+DRAFT → RECOMMENDED → UNDER_REVIEW → APPROVED → ACTIVE → DEPRECATED / ROLLED_BACK
+```
+
+Rules enforced:
+- Versions are **immutable** after creation — only status transitions are allowed
+- New versions are only created on **explicit named approval** of a recommendation
+- Activating a new version **automatically deprecates** the previous active one for the same merchant category
+- Rollback **preserves** all historical performance records — history is never rewritten
+- Every governance action is recorded in `policy_audit_log` with actor, timestamp, previous status, and new status
+
+**Insufficient-data protection:** `generate_recommendations()` only fires when sample ≥ 10 **and** improvement ≥ 3pp **and** confidence ≥ `low`. Returns `[]` otherwise — never manufactures confidence.
+
+**mandate_revoked safety gate:** `best_strategy_for_case()` always returns `"immediate escalation"` for `mandate_revoked` cases, regardless of any observed data. This compliance rule cannot be overridden by the learning system.
+
+### Strategy Drift Detection
+
+`strategy_drift.py` compares performance in the **recent window** (default: last 30 days) vs all prior data. An alert is raised when the relative performance drop exceeds 15%.
+
+Both windows must have ≥ 5 cases. Under-sampled strategies are surfaced explicitly in `insufficient_data_strategies` — never silently ignored.
+
+Possible causes investigated per alert: failure-type distribution shift, payment-method mix change, merchant-side policy change, retry timing drift, seasonal behaviour.
+
+### Limitations
+
+1. **No causal proof.** Experiment results show correlation within the experiment design. Only a properly powered randomized controlled trial provides causal evidence.
+2. **Synthetic data dominates until real runs.** All 180 seed cases are `HISTORICAL` or `SIMULATION`. No `REAL_TEST` data exists until real Razorpay Test Mode webhooks are received and executed. The dashboard makes this explicit.
+3. **Small samples per segment.** 180 cases across 4 failure reasons × 4 merchant categories ≈ 11 cases per cell. Most cells stay below `MIN_SAMPLE` and produce no recommendations. This is intentional and correct — not a bug.
+4. **No time-series aggregation.** `strategy_performance` accumulates totals without per-day granularity. Rolling-window drift uses `failure_date` as an approximation for when cases were processed.
+5. **Single-tenant.** The policy engine operates on `merchant_category = "all"` as the global namespace. Per-merchant scoping requires a `merchant_id` column throughout the schema.
+
+---
+
+## Phase 6 API Reference
+
+All Phase 6 endpoints are prefixed `/api/learning/`. Mutating endpoints require `X-API-Key`.
+
+| Method | Endpoint | Auth | Description |
+|---|---|---|---|
+| GET | `/api/learning/attribution/summary` | — | Attribution coverage and provenance breakdown |
+| POST | `/api/learning/backfill` | ✓ | Backfill strategy_performance from audit log (idempotent) |
+| GET | `/api/learning/strategy-performance` | — | All strategy performance records (filterable) |
+| GET | `/api/learning/segment-learning` | — | Full learning summary across all dimensions |
+| GET | `/api/learning/strategy-drift` | — | Strategy drift detection alerts |
+| GET | `/api/learning/experiments` | — | List all experiments |
+| POST | `/api/learning/experiments/create` | ✓ | Create a new A/B experiment |
+| GET | `/api/learning/experiments/<id>` | — | Experiment status + evaluation results |
+| POST | `/api/learning/experiments/complete` | ✓ | Mark experiment completed, record outcomes |
+| GET | `/api/learning/recommendations` | — | List recommendations (filterable by status) |
+| POST | `/api/learning/recommendations/generate` | ✓ | Generate new recommendations from evidence |
+| GET | `/api/learning/recommendations/<id>` | — | Full recommendation detail + evidence trail |
+| POST | `/api/learning/recommendations/approve` | ✓ | Approve → creates and activates policy version |
+| POST | `/api/learning/recommendations/reject` | ✓ | Reject with required reason |
+| GET | `/api/learning/policy/active` | — | Currently active policy (or rule-based defaults) |
+| GET | `/api/learning/policy/history` | — | Full version history for a merchant category |
+| GET | `/api/learning/policy/<version_id>` | — | Version detail + performance records + audit trail |
+| POST | `/api/learning/policy/measure` | ✓ | Record current performance snapshot for active policy |
+| POST | `/api/learning/policy/rollback` | ✓ | Roll back to a named previous version |
+| GET | `/api/learning/policy/audit-log` | — | Full governance audit log |
+| GET | `/api/learning/dashboard` | — | Single-call payload for the Learning view |
+
 
 ## Roadmap
 

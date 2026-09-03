@@ -1261,31 +1261,51 @@ async function runAgentLive() {
 
   // Drain loop: render one card per tick with pacing for the "watching it work" feel.
   // Pace speeds up if the queue grows so a 180-case run still finishes quickly.
+  // The try/catch inside the loop ensures a per-case render error (e.g. a null DOM
+  // element, an unexpected trace shape) never kills the whole run — we skip the
+  // bad case and keep going rather than leaving the UI frozen mid-run.
   while (!streamDone || queue.length) {
     if (!queue.length) { await sleep(30); continue; }
     const trace = queue.shift();
 
-    // Signature moment: sweep the blue pulse across Diagnosis → Triage →
-    // Strategy → Communication and tick each stage's live counter.
-    await animateCaseThroughPipeline(queue.length);
+    try {
+      // Signature moment: sweep the blue pulse across Diagnosis → Triage →
+      // Strategy → Communication and tick each stage's live counter.
+      await animateCaseThroughPipeline(queue.length);
 
-    const card = feedCard(trace);
-    feed.insertBefore(card, feed.firstChild);
-    while (feed.childNodes.length > 40) feed.removeChild(feed.lastChild);
+      const card = feedCard(trace);
+      feed.insertBefore(card, feed.firstChild);
+      while (feed.childNodes.length > 40) feed.removeChild(feed.lastChild);
 
-    processed += 1;
-    if (trace.final_status === "recovered") recovered += 1;
-    else if (trace.final_status === "escalated" || trace.final_status === "broken_promise") escalated += 1;
-    document.getElementById("lc-processed").textContent = processed;
-    document.getElementById("lc-recovered").textContent = recovered;
-    document.getElementById("lc-escalated").textContent = escalated;
-    document.getElementById("lc-count").textContent = processed + " / " + total;
-    document.getElementById("lc-fill").style.width = ((processed / total) * 100).toFixed(1) + "%";
+      processed += 1;
+      if (trace.final_status === "recovered") recovered += 1;
+      else if (trace.final_status === "escalated" || trace.final_status === "broken_promise") escalated += 1;
 
-    // The pipeline sweep already provides pacing, so keep the trailing pause
-    // short and let it shrink further when the queue backs up.
-    const delay = queue.length > 30 ? 0 : (queue.length > 10 ? 40 : 120);
-    await sleep(delay);
+      // Update the live recovery widget directly from the trace (avoids MutationObserver race).
+      updateLiveRecoveryFromTrace(trace);
+
+      // Update counters only when value changes to avoid spurious MutationObserver
+      // callbacks on elements observed by additive modules.
+      const lcProc = document.getElementById("lc-processed");
+      const lcRec  = document.getElementById("lc-recovered");
+      const lcEsc  = document.getElementById("lc-escalated");
+      const lcCnt  = document.getElementById("lc-count");
+      const lcFill = document.getElementById("lc-fill");
+      if (lcProc) lcProc.textContent = processed;
+      if (lcRec  && lcRec.textContent  !== String(recovered))  lcRec.textContent  = recovered;
+      if (lcEsc  && lcEsc.textContent  !== String(escalated))  lcEsc.textContent  = escalated;
+      if (lcCnt)  lcCnt.textContent  = processed + " / " + total;
+      if (lcFill) lcFill.style.width = ((processed / total) * 100).toFixed(1) + "%";
+
+      // The pipeline sweep already provides pacing, so keep the trailing pause
+      // short and let it shrink further when the queue backs up.
+      const delay = queue.length > 30 ? 0 : (queue.length > 10 ? 40 : 120);
+      await sleep(delay);
+    } catch (drainErr) {
+      // Log the error but never let a single-case failure freeze the entire run.
+      console.error("Drain loop error on case", trace && trace.customer_id, drainErr);
+      processed += 1; // still count it so the total is accurate
+    }
   }
 
   // Leave all four nodes lit but stop pulsing once the run finishes.
@@ -1621,7 +1641,7 @@ function initSandbox() {
 // --- Sidebar navigation (Phase 1) -------------------------------------------
 // Pure layout/navigation: shows exactly one <section class="view"> at a time and
 // marks the matching sidebar item active. Does not touch any API call or data.
-const VIEW_IDS = ["overview", "cases", "compliance", "ml", "sandbox", "chaos", "replay", "reports", "analytics"];
+const VIEW_IDS = ["overview", "cases", "compliance", "ml", "sandbox", "chaos", "replay", "reports", "analytics", "learning"];
 
 const VIEW_TITLES = {
   overview:   "Overview",
@@ -1633,6 +1653,7 @@ const VIEW_TITLES = {
   replay:     "Case Replay",
   reports:    "Reports",
   analytics:  "Analytics",
+  learning:   "Learning",
 };
 
 function showView(view) {
@@ -2350,13 +2371,19 @@ function updateLiveRecoveryFromTrace(trace) {
 }
 
 // Patch into the existing drain loop by intercepting per-trace updates.
-// We wrap the existing updateLiveCounters logic non-destructively via a
-// MutationObserver on #lc-recovered so we don't modify the existing function.
+// Direct call from the drain loop (via the try/catch block) replaces the
+// MutationObserver approach which could fire spuriously on no-op textContent sets.
+// The observer below is kept for safety but does nothing if the drain loop calls
+// updateLiveRecoveryFromTrace directly (which it does when the card is built).
 (function patchLiveCounter() {
   const target = document.getElementById("lc-recovered");
   if (!target) return;
+  let _lastVal = "";
   const obs = new MutationObserver(() => {
-    // lc-recovered text changes → a case was just processed; grab trace from feed.
+    // Only act when the value actually changed (avoids spurious no-op triggers).
+    const newVal = target.textContent;
+    if (newVal === _lastVal) return;
+    _lastVal = newVal;
     const firstCard = document.querySelector("#live-feed .feed-card");
     if (!firstCard) return;
     const cidEl = firstCard.querySelector("[data-cid]");
@@ -3445,4 +3472,642 @@ document.addEventListener("DOMContentLoaded", () => {
       runInvestigate(chip.dataset.q);
     });
   });
+});
+
+// =============================================================================
+// PHASE 6 — LEARNING DASHBOARD
+// =============================================================================
+
+let _learningLoaded = false;
+
+// --- Utility helpers ---------------------------------------------------------
+
+function provenanceBadge(prov) {
+  const map = {
+    REAL_TEST:   ["prov-real",  "Real Test"],
+    SIMULATION:  ["prov-sim",   "Simulation"],
+    HISTORICAL:  ["prov-hist",  "Historical"],
+    ESTIMATE:    ["prov-est",   "Estimate"],
+    FORECAST:    ["prov-est",   "Forecast"],
+    real_test:   ["prov-real",  "Real Test"],
+    simulation:  ["prov-sim",   "Simulation"],
+    mixed:       ["prov-hist",  "Mixed"],
+  };
+  const [cls, label] = map[prov] || ["prov-none", prov || "Unknown"];
+  return `<span class="prov-badge ${cls}">${label}</span>`;
+}
+
+function confidenceBadge(conf) {
+  if (!conf) return "";
+  const cls = `confidence-${conf.toLowerCase().replace(/ /g, "_")}`;
+  return `<span class="confidence-badge ${cls}">${titleCase(conf)}</span>`;
+}
+
+function recStatusBadge(status) {
+  return `<span class="rec-status-badge rec-status-${status}">${titleCase(status.replace(/_/g," "))}</span>`;
+}
+
+function histStatusBadge(status) {
+  return `<span class="hist-version-status hist-status-${status}">${titleCase(status.replace(/_/g," "))}</span>`;
+}
+
+function rateBar(rate) {
+  const pct = Math.min(100, Math.round((rate || 0) * 100));
+  return `<span class="sp-rate-bar" title="${pct}%"><span class="sp-rate-fill" style="width:${pct}%"></span></span>`;
+}
+
+// --- Main loader -------------------------------------------------------------
+
+async function loadLearningView() {
+  try {
+    const data = await getJSON("/api/learning/dashboard");
+    renderLearningDashboard(data);
+  } catch(err) {
+    document.getElementById("learning-policy-body").innerHTML =
+      `<p class="muted">Could not load learning dashboard: ${err.message}</p>`;
+  }
+}
+
+// --- Master render -----------------------------------------------------------
+
+function renderLearningDashboard(data) {
+  // KPIs
+  renderLearningKPIs(data);
+  // Current policy
+  renderCurrentPolicy(data.active_policy, data.performance_vs_previous);
+  // Data provenance
+  renderProvenance(data.attribution_summary, data.strategy_learning);
+  // Strategy performance (from segment learning via full dashboard call)
+  renderStrategyPerformanceSection(data);
+  // Drift
+  renderDrift(data.strategy_drift);
+  // Experiments
+  renderExperiments(data.recent_experiments || []);
+  // Recommendations
+  renderRecommendations(data.open_recommendations || []);
+  // Policy history
+  renderPolicyHistory(data.policy_history_recent || []);
+}
+
+// --- KPIs -------------------------------------------------------------------
+
+function renderLearningKPIs(data) {
+  const ap = data.active_policy || {};
+  const perf = ap.measured_performance;
+  const attr = data.attribution_summary || {};
+
+  document.getElementById("lkpi-recovery-rate").textContent =
+    perf ? pct(perf.recovery_rate) : "—";
+  document.getElementById("lkpi-policy-version").textContent =
+    ap.version_number ? "v" + ap.version_number : "Default";
+  document.getElementById("lkpi-open-recs").textContent =
+    (data.open_recommendations || []).length;
+  document.getElementById("lkpi-real-outcomes").textContent =
+    attr.real_test_outcomes != null ? attr.real_test_outcomes : "—";
+}
+
+// --- Current Policy ---------------------------------------------------------
+
+function renderCurrentPolicy(policy, perfComparison) {
+  const body = document.getElementById("learning-policy-body");
+  const badge = document.getElementById("learning-policy-source-badge");
+  if (!policy) { body.innerHTML = '<p class="muted">No active policy.</p>'; return; }
+
+  if (policy.source === "rule_based_default") {
+    badge.textContent = "Rule-based default";
+    badge.className = "badge badge-neutral";
+  } else {
+    badge.textContent = "v" + policy.version_number;
+    badge.className = "badge badge-ok";
+  }
+
+  const params = policy.strategy_params || {};
+  const paramRows = Object.entries(params).map(([reason, strat]) =>
+    `<tr><td><code>${reason}</code></td><td>${strat}</td></tr>`
+  ).join("");
+
+  body.innerHTML = `
+    <table class="sp-table">
+      <thead><tr><th>Failure reason</th><th>Strategy</th></tr></thead>
+      <tbody>${paramRows}</tbody>
+    </table>
+    ${policy.reason ? `<p class="muted" style="margin-top:8px;font-size:12px;">Reason: ${escHtml(policy.reason)}</p>` : ""}
+    ${policy.approved_by ? `<p class="muted" style="font-size:12px;">Approved by: ${escHtml(policy.approved_by)} · ${fmtDate(policy.activated_at)}</p>` : ""}
+  `;
+
+  const perfEl = document.getElementById("learning-policy-perf");
+  if (perfComparison) {
+    const delta = perfComparison.delta;
+    const sign = delta >= 0 ? "+" : "";
+    const cls = delta >= 0 ? "positive" : "negative";
+    perfEl.innerHTML = `
+      <div class="exp-diff" style="margin-top:8px;">
+        <span class="exp-diff-val ${cls}">${sign}${pct(delta)}</span>
+        <span>vs previous policy</span>
+        <span class="muted" style="font-size:12px;">
+          Before: ${pct(perfComparison.previous_recovery_rate)} ·
+          After: ${pct(perfComparison.current_recovery_rate)}
+          <br><em style="font-size:11px;">${escHtml(perfComparison.note || "")}</em>
+        </span>
+      </div>`;
+  } else {
+    perfEl.innerHTML = "";
+  }
+}
+
+// --- Provenance -------------------------------------------------------------
+
+function renderProvenance(attr, learning) {
+  const body = document.getElementById("learning-provenance-body");
+  if (!attr) { body.innerHTML = '<p class="muted">No attribution data yet. Run the agent then click Backfill.</p>'; return; }
+
+  const prov = attr.provenance_breakdown || {};
+  const realCount = attr.real_test_outcomes || 0;
+
+  let rows = Object.entries(prov).map(([p, stats]) => `
+    <tr>
+      <td>${provenanceBadge(p)}</td>
+      <td class="num">${(stats.attempts || 0).toLocaleString()}</td>
+      <td class="num">${(stats.recoveries || 0).toLocaleString()}</td>
+      <td class="num">${stats.attempts ? pct(stats.recoveries / stats.attempts) : "—"}</td>
+      <td class="num">${rupees(stats.amount_recovered || 0)}</td>
+    </tr>`).join("");
+
+  if (!rows) rows = `<tr><td colspan="5" class="muted" style="text-align:center">No attribution data yet.</td></tr>`;
+
+  body.innerHTML = `
+    ${realCount === 0 ? `<div class="alert-note" style="padding:8px 12px;background:var(--status-warning-bg);border-radius:6px;font-size:12px;margin-bottom:10px;">
+      <strong>No real Razorpay Test Mode observations yet.</strong> All performance data is from simulation or historical pipeline runs.
+      Use real Razorpay Test Mode to collect authentic outcome data.</div>` : ""}
+    <table class="provenance-table">
+      <thead><tr><th>Source</th><th>Attempts</th><th>Recoveries</th><th>Rate</th><th>Amount recovered</th></tr></thead>
+      <tbody>${rows}</tbody>
+    </table>
+    <p class="muted" style="font-size:11px;margin-top:6px;">${escHtml(attr.data_trust_note || "")}</p>
+    <div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap;">
+      <button class="btn btn-ghost btn-sm" id="btn-backfill">Backfill attribution from audit log</button>
+    </div>`;
+
+  document.getElementById("btn-backfill")?.addEventListener("click", doBackfill);
+}
+
+// --- Strategy Performance ---------------------------------------------------
+
+function renderStrategyPerformanceSection(data) {
+  const body = document.getElementById("learning-strategy-body");
+  // Fetch full segment learning data
+  getJSON("/api/learning/segment-learning").then(d => {
+    renderSegmentLearning(body, d);
+    document.getElementById("learning-strategy-badge").textContent =
+      d.real_test_observations > 0 ? "Actual" : "Historical/Simulation";
+  }).catch(err => {
+    body.innerHTML = `<p class="muted">Could not load: ${err.message}</p>`;
+  });
+}
+
+function renderSegmentLearning(container, data) {
+  if (!data || !data.dimensions || data.dimensions.length === 0) {
+    container.innerHTML = '<p class="muted learning-empty">No strategy performance data yet. Run the agent first, then click Backfill.</p>';
+    return;
+  }
+
+  // Group by dimension_key
+  const byKey = {};
+  for (const section of data.dimensions) {
+    const k = section.dimension_key;
+    if (!byKey[k]) byKey[k] = [];
+    byKey[k].push(section);
+  }
+
+  let html = "";
+  const keyLabels = { global: "Global", failure_reason: "By failure reason", merchant_category: "By merchant category" };
+  for (const [key, sections] of Object.entries(byKey)) {
+    html += `<h4 style="font-size:12px;font-weight:600;text-transform:uppercase;color:var(--text-muted);margin:14px 0 6px;">${keyLabels[key] || key}</h4>`;
+    for (const section of sections) {
+      html += `<div style="margin-bottom:10px;">
+        <div style="font-size:12px;font-weight:500;margin-bottom:4px;">${escHtml(section.dimension_value)}</div>
+        <table class="sp-table">
+          <thead><tr><th>Strategy</th><th>Attempts</th><th>Rate</th><th>Recovered</th><th>Source</th><th></th></tr></thead>
+          <tbody>`;
+      for (const s of section.strategies) {
+        const insuf = !s.sufficient ? `<span class="sp-insufficient-flag">low n</span>` : "";
+        const provs = (s.provenance_mix || [section.provenance_mix || []]).flat();
+        html += `<tr>
+          <td>${escHtml(s.strategy || "")}</td>
+          <td class="num">${s.attempts}</td>
+          <td class="num">${rateBar(s.recovery_rate)} ${pct(s.recovery_rate)}${insuf}</td>
+          <td class="num">${rupees(s.amount_recovered || 0)}</td>
+          <td>${(section.provenance_mix || []).map(provenanceBadge).join(" ")}</td>
+          <td>${s.strategy === section.best_strategy && section.has_sufficient_data ? '<span style="font-size:11px;color:var(--accent-ok);">★ best</span>' : ""}</td>
+        </tr>`;
+      }
+      html += `</tbody></table></div>`;
+    }
+  }
+  container.innerHTML = html;
+}
+
+// --- Strategy Drift ---------------------------------------------------------
+
+function renderDrift(driftData) {
+  const card = document.getElementById("learning-drift-card");
+  const body = document.getElementById("learning-drift-body");
+  if (!driftData || !driftData.alerts || driftData.alerts.length === 0) {
+    card.classList.add("hidden");
+    return;
+  }
+  card.classList.remove("hidden");
+  body.innerHTML = driftData.alerts.map(a => `
+    <div class="drift-alert drift-${a.severity}">
+      <div class="drift-alert-title">${escHtml(a.title)}</div>
+      <p style="font-size:12px;margin:4px 0;">${escHtml(a.description)}</p>
+      <div class="drift-rates">
+        <div class="drift-rate-item">
+          <span class="drift-rate-label">Baseline (${a.baseline_n} cases)</span>
+          <span class="drift-rate-value">${pct(a.baseline_rate)}</span>
+        </div>
+        <div class="drift-rate-item">
+          <span class="drift-rate-label">Recent (${a.recent_n} cases)</span>
+          <span class="drift-rate-value dropped">${pct(a.recent_rate)}</span>
+        </div>
+        <div class="drift-rate-item">
+          <span class="drift-rate-label">Relative drop</span>
+          <span class="drift-rate-value dropped">${pct(a.relative_drop)}</span>
+        </div>
+      </div>
+      <p style="font-size:11px;color:var(--text-muted);margin-top:6px;">${escHtml(a.recommended_action)}</p>
+    </div>`).join("");
+}
+
+// --- Experiments ------------------------------------------------------------
+
+function renderExperiments(experiments) {
+  const body = document.getElementById("learning-experiments-body");
+  if (!experiments || experiments.length === 0) {
+    body.innerHTML = '<p class="muted learning-empty">No experiments yet. Create one to start a controlled A/B comparison.</p>';
+    return;
+  }
+  body.innerHTML = experiments.map(exp => renderExperimentCard(exp)).join("");
+}
+
+function renderExperimentCard(exp) {
+  // exp may be a status dict or an evaluation dict
+  const eid = exp.experiment_id;
+  const name = escHtml(exp.name || eid);
+  const status = exp.status || "unknown";
+  const ctrl = escHtml(exp.control_strategy || "");
+  const treat = escHtml(exp.treatment_strategy || "");
+
+  let armsHtml = "";
+  let diffHtml = "";
+  let incrHtml = "";
+
+  const ev = exp.evaluation || exp; // evaluation may be nested
+
+  if (ev.sufficient_data === false) {
+    const n_c = ev.control_arm ? ev.control_arm.sample_size : (exp.control_outcomes_recorded || 0);
+    const n_t = ev.treatment_arm ? ev.treatment_arm.sample_size : (exp.treatment_outcomes_recorded || 0);
+    armsHtml = `<div class="exp-insuf">${escHtml(ev.insufficient_data_explanation || `Collecting data… control: ${n_c} obs, treatment: ${n_t} obs, need ≥ ${ev.required_per_arm || 10} each.`)}</div>`;
+  } else if (ev.control_arm && ev.treatment_arm) {
+    const c = ev.control_arm;
+    const t = ev.treatment_arm;
+    armsHtml = `<div class="exp-arms">
+      <div class="exp-arm control">
+        <div class="exp-arm-label">Control · ${ctrl}</div>
+        <div class="exp-arm-rate">${pct(c.recovery_rate)}</div>
+        <div class="exp-arm-sub">${c.sample_size} obs · ${rupees(c.amount_recovered)} recovered</div>
+        <div class="exp-arm-sub">${(c.real_test_count||0)} real / ${(c.simulation_count||0)} sim</div>
+      </div>
+      <div class="exp-arm treatment">
+        <div class="exp-arm-label">Treatment · ${treat}</div>
+        <div class="exp-arm-rate">${pct(t.recovery_rate)}</div>
+        <div class="exp-arm-sub">${t.sample_size} obs · ${rupees(t.amount_recovered)} recovered</div>
+        <div class="exp-arm-sub">${(t.real_test_count||0)} real / ${(t.simulation_count||0)} sim</div>
+      </div>
+    </div>`;
+
+    if (ev.difference) {
+      const diff = ev.difference;
+      const rawDiff = diff.recovery_rate_diff || 0;
+      const cls = rawDiff > 0.01 ? "positive" : rawDiff < -0.01 ? "negative" : "neutral";
+      const verdict = diff.verdict === "treatment_better" ? "Treatment wins" :
+                      diff.verdict === "control_better" ? "Control wins" : "No meaningful difference";
+      diffHtml = `<div class="exp-diff">
+        <span class="exp-diff-val ${cls}">${diff.recovery_rate_diff_pct || "—"}</span>
+        <span>${verdict}</span>
+        ${diff.confidence ? confidenceBadge(diff.confidence) : ""}
+        ${diff.z_score != null ? `<span class="muted" style="font-size:12px;">z=${diff.z_score.toFixed(2)}</span>` : ""}
+        ${provenanceBadge(ev.data_type)}
+      </div>`;
+    }
+    if (ev.incremental_revenue) {
+      const ir = ev.incremental_revenue;
+      incrHtml = `<p style="font-size:12px;color:var(--text-muted);margin:6px 0 0;">${escHtml(ir.note || "")}</p>
+        <p style="font-size:12px;margin:4px 0;">Estimated incremental: <strong>${rupees(ir.estimated_incremental_rs || 0)}</strong> [${escHtml(ir.data_type || "estimate")}]</p>`;
+    }
+  }
+
+  const isPrelim = ev.is_preliminary ? '<span class="badge badge-neutral" style="font-size:10px;">Preliminary</span>' : "";
+
+  return `<div class="exp-card">
+    <div class="exp-card-head">
+      <h3 class="exp-card-title">${name}</h3>
+      <div style="display:flex;gap:6px;align-items:center;">
+        ${isPrelim}
+        <span class="badge badge-neutral">${escHtml(status)}</span>
+        ${status === "active" ? `<button class="btn btn-ghost btn-sm" onclick="completeExperiment('${eid}')">Complete</button>` : ""}
+      </div>
+    </div>
+    <div class="exp-card-meta">
+      <span>${ctrl} vs ${treat}</span>
+      ${exp.cohort ? `<span>Cohort: ${JSON.stringify(exp.cohort).replace(/[{}"]/g,"").replace(/null,?/g,"").trim() || "all"}</span>` : ""}
+      ${exp.created_at ? `<span>Created: ${fmtDate(exp.created_at)}</span>` : ""}
+    </div>
+    ${armsHtml}${diffHtml}${incrHtml}
+  </div>`;
+}
+
+// --- Recommendations --------------------------------------------------------
+
+function renderRecommendations(recs) {
+  const body = document.getElementById("learning-recs-body");
+  if (!recs || recs.length === 0) {
+    body.innerHTML = '<p class="muted learning-empty">No open recommendations. Backfill attribution data then click Refresh to generate.</p>';
+    return;
+  }
+  body.innerHTML = recs.map(r => renderRecCard(r)).join("");
+}
+
+function renderRecCard(r) {
+  const evidence = r.why_evidence_parsed || {};
+  const rid = r.recommendation_id;
+  const canApprove = r.status === "recommended" || r.status === "under_review";
+  const canReject  = r.status === "recommended" || r.status === "under_review";
+
+  const currentRate  = r.current_rate  != null ? pct(r.current_rate)  : "—";
+  const recRate      = r.recommended_rate != null ? pct(r.recommended_rate) : "—";
+  const improvement  = (r.current_rate != null && r.recommended_rate != null)
+    ? `+${((r.recommended_rate - r.current_rate)*100).toFixed(1)}pp` : "—";
+
+  return `<div class="rec-card" id="rec-card-${rid}">
+    <div class="rec-card-head">
+      <h3 class="rec-card-title">${escHtml(r.title)}</h3>
+      <div style="display:flex;gap:6px;align-items:center;">
+        ${recStatusBadge(r.status)}
+        ${provenanceBadge(r.data_source)}
+        ${confidenceBadge(r.confidence)}
+      </div>
+    </div>
+    <div class="rec-what">${escHtml(r.what_changes)}</div>
+
+    <div class="rec-evidence">
+      <div class="rec-evidence-row"><span class="rec-evidence-label">Current strategy</span><span>${escHtml(r.current_strategy)}</span></div>
+      <div class="rec-evidence-row"><span class="rec-evidence-label">Recommended</span><span>${escHtml(r.recommended_strategy)}</span></div>
+      <div class="rec-evidence-row"><span class="rec-evidence-label">Current rate</span><span>${currentRate}</span></div>
+      <div class="rec-evidence-row"><span class="rec-evidence-label">Expected rate</span><span>${recRate}</span></div>
+      <div class="rec-evidence-row"><span class="rec-evidence-label">Improvement</span><span style="color:var(--accent-ok);font-weight:600;">${improvement}</span></div>
+      <div class="rec-evidence-row"><span class="rec-evidence-label">Sample size</span><span>${r.sample_size} observations</span></div>
+      ${evidence.provenance ? `<div class="rec-evidence-row"><span class="rec-evidence-label">Evidence type</span><span>${(evidence.provenance||[]).map(provenanceBadge).join(" ")}</span></div>` : ""}
+    </div>
+
+    <div class="rec-impact">
+      <div class="rec-impact-item">
+        <span class="rec-impact-label">Est. incremental</span>
+        <span class="rec-impact-value positive">${rupees(r.estimated_incremental_rs || 0)}</span>
+      </div>
+      <div class="rec-impact-item">
+        <span class="rec-impact-label">Confidence</span>
+        <span class="rec-impact-value" style="font-size:14px;">${titleCase(r.confidence || "—")}</span>
+      </div>
+    </div>
+
+    ${canApprove || canReject ? `<div class="rec-actions">
+      ${canApprove ? `<button class="btn btn-primary btn-sm" onclick="approveRecommendation('${rid}')">Approve</button>` : ""}
+      ${canReject  ? `<button class="btn btn-ghost btn-sm" onclick="promptRejectRecommendation('${rid}')">Reject</button>` : ""}
+    </div>` : ""}
+
+    <details style="margin-top:10px;">
+      <summary style="font-size:11px;cursor:pointer;color:var(--text-muted);">Why did this recommendation appear?</summary>
+      <div style="margin-top:8px;font-size:12px;">
+        ${evidence.dimension ? `<p><strong>Dimension:</strong> ${escHtml(evidence.dimension)}</p>` : ""}
+        ${evidence.improvement_pp != null ? `<p><strong>Observed improvement:</strong> ${evidence.improvement_pp.toFixed(2)}pp over default strategy</p>` : ""}
+        ${evidence.all_strategies ? `<p><strong>All strategies observed:</strong></p><ul style="margin:4px 0 0 16px;">${
+          evidence.all_strategies.map(s => `<li>${escHtml(s.strategy)}: ${pct(s.rate)} (n=${s.n})${s.sufficient?"":" — insufficient data"}</li>`).join("")
+        }</ul>` : ""}
+      </div>
+    </details>
+  </div>`;
+}
+
+// --- Policy History ----------------------------------------------------------
+
+function renderPolicyHistory(history) {
+  const body = document.getElementById("learning-history-body");
+  if (!history || history.length === 0) {
+    body.innerHTML = '<p class="muted learning-empty">No policy versions created yet. Approve a recommendation to create the first version.</p>';
+    return;
+  }
+  body.innerHTML = `<div class="hist-table-wrap">${history.map(v => {
+    const params = v.strategy_params || {};
+    const impact = v.expected_impact || {};
+    const perf = (v.performance_records || [])[0];
+    return `<div class="hist-version-row">
+      <span class="hist-version-num">v${v.version_number}</span>
+      ${histStatusBadge(v.status)}
+      <span style="font-size:12px;flex:1;">${escHtml(v.reason || "No reason recorded")}</span>
+      ${perf ? `<span style="font-size:12px;">${pct(perf.recovery_rate)} recovery · ${perf.cases_observed} cases</span>` : ""}
+      ${impact.recovery_rate_delta != null ? `<span style="font-size:12px;color:var(--accent-ok);">Expected +${pct(impact.recovery_rate_delta)}</span>` : ""}
+      ${v.activated_at ? `<span style="font-size:11px;color:var(--text-muted);">${fmtDate(v.activated_at)}</span>` : ""}
+      ${v.status === "deprecated" || v.status === "rolled_back" ? "" :
+        v.status === "active" ? "" :
+        `<button class="btn btn-ghost btn-sm" onclick="rollbackToVersion('${v.version_id}')">Rollback</button>`}
+    </div>`;
+  }).join("")}</div>`;
+}
+
+// --- Actions ----------------------------------------------------------------
+
+async function doBackfill() {
+  const btn = document.getElementById("btn-backfill");
+  if (btn) { btn.textContent = "Backfilling…"; btn.disabled = true; }
+  try {
+    const result = await postJSON("/api/learning/backfill");
+    banner(`Backfill complete: ${result.attribution_backfill?.attributed || 0} cases attributed.`);
+    _learningLoaded = false;
+    loadLearningView();
+  } catch(err) {
+    banner("Backfill failed: " + err.message, true);
+  } finally {
+    if (btn) { btn.textContent = "Backfill attribution from audit log"; btn.disabled = false; }
+  }
+}
+
+async function generateRecommendations() {
+  const btn = document.getElementById("btn-generate-recs");
+  if (btn) { btn.textContent = "Generating…"; btn.disabled = true; }
+  try {
+    const result = await postJSON("/api/learning/recommendations/generate");
+    const n = result.new_recommendations || 0;
+    banner(n > 0 ? `Generated ${n} new recommendation(s).` : "No new recommendations — evidence thresholds not met yet.");
+    _learningLoaded = false;
+    loadLearningView();
+  } catch(err) {
+    banner("Could not generate recommendations: " + err.message, true);
+  } finally {
+    if (btn) { btn.textContent = "Refresh"; btn.disabled = false; }
+  }
+}
+
+async function approveRecommendation(recId) {
+  if (!confirm("Approve this recommendation and activate the new policy version?")) return;
+  try {
+    const r = await fetch("/api/learning/recommendations/approve", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", ..._apiKey ? { "X-API-Key": _apiKey } : {} },
+      body: JSON.stringify({ recommendation_id: recId, actor: "dashboard_user" }),
+    });
+    const data = await r.json();
+    if (!r.ok || !data.ok) throw new Error(data.message || "Approval failed");
+    banner(`Recommendation approved. Policy version ${data.version_id ? "v" + data.version_id.slice(0,8) : ""} activated.`);
+    _learningLoaded = false;
+    loadLearningView();
+  } catch(err) {
+    banner("Approval failed: " + err.message, true);
+  }
+}
+
+async function promptRejectRecommendation(recId) {
+  const reason = prompt("Reason for rejecting this recommendation:");
+  if (!reason || !reason.trim()) return;
+  try {
+    const r = await fetch("/api/learning/recommendations/reject", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", ..._apiKey ? { "X-API-Key": _apiKey } : {} },
+      body: JSON.stringify({ recommendation_id: recId, actor: "dashboard_user", reason }),
+    });
+    const data = await r.json();
+    if (!r.ok || !data.ok) throw new Error("Rejection failed");
+    banner("Recommendation rejected.");
+    _learningLoaded = false;
+    loadLearningView();
+  } catch(err) {
+    banner("Rejection failed: " + err.message, true);
+  }
+}
+
+async function completeExperiment(expId) {
+  if (!confirm("Mark this experiment as completed?")) return;
+  try {
+    const r = await fetch("/api/learning/experiments/complete", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", ..._apiKey ? { "X-API-Key": _apiKey } : {} },
+      body: JSON.stringify({ experiment_id: expId }),
+    });
+    const data = await r.json();
+    if (!r.ok || !data.ok) throw new Error(data.message || "Failed to complete experiment");
+    banner(`Experiment completed. ${data.outcomes_recorded_this_sweep || 0} outcomes recorded.`);
+    _learningLoaded = false;
+    loadLearningView();
+  } catch(err) {
+    banner("Could not complete experiment: " + err.message, true);
+  }
+}
+
+async function rollbackToVersion(versionId) {
+  const reason = prompt("Reason for rollback:");
+  if (!reason || !reason.trim()) return;
+  try {
+    const r = await fetch("/api/learning/policy/rollback", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", ..._apiKey ? { "X-API-Key": _apiKey } : {} },
+      body: JSON.stringify({ target_version_id: versionId, actor: "dashboard_user", reason }),
+    });
+    const data = await r.json();
+    if (!r.ok || !data.ok) throw new Error(data.message || "Rollback failed");
+    banner(`Rolled back to version ${versionId.slice(0,8)}. Current version deprecated.`);
+    _learningLoaded = false;
+    loadLearningView();
+  } catch(err) {
+    banner("Rollback failed: " + err.message, true);
+  }
+}
+
+// --- New Experiment Form ----------------------------------------------------
+
+function initNewExperimentForm() {
+  const btnNew    = document.getElementById("btn-new-experiment");
+  const btnCancel = document.getElementById("btn-cancel-experiment");
+  const formCard  = document.getElementById("new-experiment-form-card");
+  const form      = document.getElementById("new-experiment-form");
+
+  if (btnNew) btnNew.addEventListener("click", () => formCard?.classList.remove("hidden"));
+  if (btnCancel) btnCancel.addEventListener("click", () => formCard?.classList.add("hidden"));
+
+  if (form) {
+    form.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const name    = document.getElementById("exp-name")?.value.trim();
+      const ctrl    = document.getElementById("exp-control")?.value;
+      const treat   = document.getElementById("exp-treatment")?.value;
+      const merchant = document.getElementById("exp-merchant")?.value || null;
+      const reason  = document.getElementById("exp-reason")?.value || null;
+      const minN    = parseInt(document.getElementById("exp-min-sample")?.value || "10", 10);
+
+      if (!name) { banner("Experiment name is required.", true); return; }
+      if (ctrl === treat) { banner("Control and treatment must be different strategies.", true); return; }
+
+      try {
+        const r = await fetch("/api/learning/experiments/create", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", ..._apiKey ? { "X-API-Key": _apiKey } : {} },
+          body: JSON.stringify({
+            name, control_strategy: ctrl, treatment_strategy: treat,
+            merchant_category: merchant || undefined,
+            failure_reason: reason || undefined,
+            min_sample_size: minN,
+          }),
+        });
+        const data = await r.json();
+        if (!r.ok || !data.ok) throw new Error(data.message || "Create failed");
+        banner(`Experiment created. ${data.assignment?.assigned || 0} cases assigned.`);
+        form.reset();
+        formCard?.classList.add("hidden");
+        _learningLoaded = false;
+        loadLearningView();
+      } catch(err) {
+        banner("Could not create experiment: " + err.message, true);
+      }
+    });
+  }
+}
+
+// --- Utility: escape HTML ---------------------------------------------------
+
+function escHtml(s) {
+  return String(s == null ? "" : s)
+    .replace(/&/g,"&amp;").replace(/</g,"&lt;")
+    .replace(/>/g,"&gt;").replace(/"/g,"&quot;");
+}
+
+function fmtDate(iso) {
+  if (!iso) return "—";
+  try { return new Date(iso).toLocaleDateString("en-IN", { day:"2-digit", month:"short", year:"numeric" }); }
+  catch { return iso; }
+}
+
+// --- Wire up Learning nav click ---------------------------------------------
+
+document.addEventListener("DOMContentLoaded", () => {
+  // Learning nav click → lazy load
+  document.querySelectorAll(".nav-item[data-view='learning']").forEach(item => {
+    item.addEventListener("click", () => {
+      if (!_learningLoaded) {
+        _learningLoaded = true;
+        loadLearningView();
+        initNewExperimentForm();
+      }
+    });
+  });
+  // Recommendations refresh button
+  document.getElementById("btn-generate-recs")?.addEventListener("click", generateRecommendations);
 });

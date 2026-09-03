@@ -240,6 +240,177 @@ CREATE TABLE IF NOT EXISTS recovery_jobs (
 CREATE INDEX IF NOT EXISTS idx_recovery_jobs_customer  ON recovery_jobs(customer_id);
 CREATE INDEX IF NOT EXISTS idx_recovery_jobs_status    ON recovery_jobs(status);
 """)
+    # Phase 6: Closed-loop learning tables.
+    conn.executescript("""
+-- strategy_performance: durable, per-dimension strategy stats with data provenance.
+-- Each row is one (strategy, dimension_key, dimension_value) bucket.
+-- provenance: REAL_TEST | SIMULATION | HISTORICAL | ESTIMATE | FORECAST
+CREATE TABLE IF NOT EXISTS strategy_performance (
+    id                INTEGER PRIMARY KEY AUTOINCREMENT,
+    strategy          TEXT    NOT NULL,
+    dimension_key     TEXT    NOT NULL,   -- e.g. 'failure_reason', 'merchant_category', 'global'
+    dimension_value   TEXT    NOT NULL,   -- e.g. 'insufficient_funds', 'subscription', 'all'
+    attempts          INTEGER NOT NULL DEFAULT 0,
+    recoveries        INTEGER NOT NULL DEFAULT 0,
+    amount_recovered  REAL    NOT NULL DEFAULT 0.0,
+    amount_attempted  REAL    NOT NULL DEFAULT 0.0,
+    escalations       INTEGER NOT NULL DEFAULT 0,
+    time_to_recovery_sum_hours REAL NOT NULL DEFAULT 0.0,
+    provenance        TEXT    NOT NULL DEFAULT 'HISTORICAL',
+    last_updated      TEXT    NOT NULL DEFAULT (datetime('now','utc')),
+    UNIQUE (strategy, dimension_key, dimension_value, provenance)
+);
+CREATE INDEX IF NOT EXISTS idx_sp_strategy ON strategy_performance(strategy);
+CREATE INDEX IF NOT EXISTS idx_sp_dimension ON strategy_performance(dimension_key, dimension_value);
+
+-- experiments: controlled A/B strategy experiments.
+CREATE TABLE IF NOT EXISTS experiments (
+    experiment_id     TEXT    PRIMARY KEY,
+    name              TEXT    NOT NULL,
+    description       TEXT,
+    merchant_category TEXT,
+    failure_reason    TEXT,
+    control_strategy  TEXT    NOT NULL,
+    treatment_strategy TEXT   NOT NULL,
+    cohort_definition TEXT    NOT NULL,   -- JSON describing assignment criteria
+    status            TEXT    NOT NULL DEFAULT 'active',
+        -- active | completed | cancelled | paused
+    created_at        TEXT    NOT NULL DEFAULT (datetime('now','utc')),
+    started_at        TEXT,
+    ended_at          TEXT,
+    created_by        TEXT    NOT NULL DEFAULT 'system',
+    min_sample_size   INTEGER NOT NULL DEFAULT 30,
+    notes             TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_exp_status ON experiments(status);
+CREATE INDEX IF NOT EXISTS idx_exp_created ON experiments(created_at);
+
+-- experiment_assignments: which case was assigned to which arm.
+CREATE TABLE IF NOT EXISTS experiment_assignments (
+    id                INTEGER PRIMARY KEY AUTOINCREMENT,
+    experiment_id     TEXT    NOT NULL,
+    customer_id       TEXT    NOT NULL,
+    arm               TEXT    NOT NULL,   -- 'control' | 'treatment'
+    assigned_at       TEXT    NOT NULL DEFAULT (datetime('now','utc')),
+    UNIQUE (experiment_id, customer_id),
+    FOREIGN KEY (experiment_id) REFERENCES experiments(experiment_id),
+    FOREIGN KEY (customer_id) REFERENCES mandate_failures(customer_id)
+);
+CREATE INDEX IF NOT EXISTS idx_ea_experiment ON experiment_assignments(experiment_id);
+CREATE INDEX IF NOT EXISTS idx_ea_customer ON experiment_assignments(customer_id);
+
+-- experiment_outcomes: final outcome for each assigned case (written once, immutable).
+CREATE TABLE IF NOT EXISTS experiment_outcomes (
+    id                INTEGER PRIMARY KEY AUTOINCREMENT,
+    experiment_id     TEXT    NOT NULL,
+    customer_id       TEXT    NOT NULL,
+    arm               TEXT    NOT NULL,
+    strategy_used     TEXT    NOT NULL,
+    outcome_status    TEXT    NOT NULL,   -- 'recovered' | 'escalated' | 'in_progress' | ...
+    amount_rupees     REAL    NOT NULL DEFAULT 0.0,
+    recovered         INTEGER NOT NULL DEFAULT 0,   -- 1 or 0
+    time_to_recovery_hours REAL,
+    execution_mode    TEXT    NOT NULL DEFAULT 'simulation',
+    recorded_at       TEXT    NOT NULL DEFAULT (datetime('now','utc')),
+    UNIQUE (experiment_id, customer_id),
+    FOREIGN KEY (experiment_id) REFERENCES experiments(experiment_id)
+);
+CREATE INDEX IF NOT EXISTS idx_eo_experiment ON experiment_outcomes(experiment_id);
+
+-- policy_versions: immutable record of every policy version.
+-- Once created, a policy_version row must never be modified (except status transitions).
+CREATE TABLE IF NOT EXISTS policy_versions (
+    version_id        TEXT    PRIMARY KEY,
+    version_number    INTEGER NOT NULL,
+    merchant_category TEXT    NOT NULL DEFAULT 'all',
+    strategy_params   TEXT    NOT NULL,   -- JSON: full strategy parameter set
+    status            TEXT    NOT NULL DEFAULT 'draft',
+        -- draft | recommended | under_review | approved | active | deprecated | rolled_back
+    created_at        TEXT    NOT NULL DEFAULT (datetime('now','utc')),
+    created_by        TEXT    NOT NULL DEFAULT 'system',
+    activated_at      TEXT,
+    deprecated_at     TEXT,
+    reason            TEXT,              -- human-readable reason for this version
+    evidence_summary  TEXT,             -- JSON: evidence that motivated this version
+    approved_by       TEXT,
+    approved_at       TEXT,
+    previous_version_id TEXT,
+    expected_impact   TEXT              -- JSON: {recovery_rate_delta, amount_delta, confidence}
+);
+CREATE INDEX IF NOT EXISTS idx_pv_status ON policy_versions(status);
+CREATE INDEX IF NOT EXISTS idx_pv_merchant ON policy_versions(merchant_category);
+CREATE INDEX IF NOT EXISTS idx_pv_version_number ON policy_versions(version_number DESC);
+
+-- policy_performance: measured performance of a policy version after activation.
+-- Separate from policy_versions so historical policy rows stay immutable.
+CREATE TABLE IF NOT EXISTS policy_performance (
+    id                INTEGER PRIMARY KEY AUTOINCREMENT,
+    version_id        TEXT    NOT NULL,
+    measurement_window_days INTEGER NOT NULL DEFAULT 30,
+    cases_observed    INTEGER NOT NULL DEFAULT 0,
+    recoveries        INTEGER NOT NULL DEFAULT 0,
+    recovery_rate     REAL    NOT NULL DEFAULT 0.0,
+    amount_recovered  REAL    NOT NULL DEFAULT 0.0,
+    escalation_rate   REAL    NOT NULL DEFAULT 0.0,
+    measured_at       TEXT    NOT NULL DEFAULT (datetime('now','utc')),
+    data_type         TEXT    NOT NULL DEFAULT 'actual',
+    FOREIGN KEY (version_id) REFERENCES policy_versions(version_id)
+);
+CREATE INDEX IF NOT EXISTS idx_pp_version ON policy_performance(version_id);
+
+-- policy_recommendations: each data-backed recommendation surfaced to the merchant.
+CREATE TABLE IF NOT EXISTS policy_recommendations (
+    recommendation_id TEXT    PRIMARY KEY,
+    title             TEXT    NOT NULL,
+    what_changes      TEXT    NOT NULL,   -- human-readable description of the change
+    why_evidence      TEXT    NOT NULL,   -- JSON: evidence trail
+    current_strategy  TEXT    NOT NULL,
+    recommended_strategy TEXT NOT NULL,
+    current_rate      REAL,
+    recommended_rate  REAL,
+    sample_size       INTEGER NOT NULL DEFAULT 0,
+    estimated_incremental_rs REAL,
+    confidence        TEXT    NOT NULL DEFAULT 'low',
+        -- low | moderate | high
+    data_source       TEXT    NOT NULL DEFAULT 'simulation',
+        -- REAL_TEST | SIMULATION | HISTORICAL | MIXED
+    status            TEXT    NOT NULL DEFAULT 'draft',
+        -- draft | recommended | under_review | approved | rejected | superseded
+    created_at        TEXT    NOT NULL DEFAULT (datetime('now','utc')),
+    reviewed_at       TEXT,
+    reviewed_by       TEXT,
+    approved_at       TEXT,
+    approved_by       TEXT,
+    rejected_at       TEXT,
+    rejected_by       TEXT,
+    rejection_reason  TEXT,
+    merchant_category TEXT    NOT NULL DEFAULT 'all',
+    failure_reason    TEXT,
+    experiment_id     TEXT,              -- if backed by a specific experiment
+    policy_version_id TEXT              -- version created when approved
+);
+CREATE INDEX IF NOT EXISTS idx_pr_status ON policy_recommendations(status);
+CREATE INDEX IF NOT EXISTS idx_pr_created ON policy_recommendations(created_at DESC);
+
+-- policy_audit_log: append-only record of every policy governance action.
+CREATE TABLE IF NOT EXISTS policy_audit_log (
+    id                INTEGER PRIMARY KEY AUTOINCREMENT,
+    action_type       TEXT    NOT NULL,
+        -- version_created | version_approved | version_activated | version_deprecated
+        -- | version_rolled_back | recommendation_created | recommendation_approved
+        -- | recommendation_rejected
+    version_id        TEXT,
+    recommendation_id TEXT,
+    actor             TEXT    NOT NULL DEFAULT 'system',
+    previous_status   TEXT,
+    new_status        TEXT,
+    notes             TEXT,
+    action_at         TEXT    NOT NULL DEFAULT (datetime('now','utc'))
+);
+CREATE INDEX IF NOT EXISTS idx_pal_version ON policy_audit_log(version_id);
+CREATE INDEX IF NOT EXISTS idx_pal_action ON policy_audit_log(action_type);
+CREATE INDEX IF NOT EXISTS idx_pal_at ON policy_audit_log(action_at DESC);
+""")
     # Additive column migrations for recovery_jobs (future-proofing).
     existing_rj = {row[1] for row in conn.execute("PRAGMA table_info(recovery_jobs)")}
     additive_rj = {
@@ -254,6 +425,8 @@ CREATE INDEX IF NOT EXISTS idx_recovery_jobs_status    ON recovery_jobs(status);
                 conn.execute(f"ALTER TABLE recovery_jobs ADD COLUMN {col} {decl}")
             except Exception:
                 pass  # column may already exist in some DB files
+    # Phase 6: additive column migrations for new tables
+    _migrate_phase6(conn)
 
 
 def reset_db(conn=None):
@@ -275,6 +448,16 @@ def reset_db(conn=None):
             conn.execute("DELETE FROM recovery_jobs")
         except Exception:
             pass  # table may not exist yet on very old DB files
+        # Phase 6: clear closed-loop learning tables on reset.
+        for tbl in (
+            "policy_audit_log", "policy_performance", "policy_recommendations",
+            "policy_versions", "experiment_outcomes", "experiment_assignments",
+            "experiments", "strategy_performance",
+        ):
+            try:
+                conn.execute(f"DELETE FROM {tbl}")
+            except Exception:
+                pass
         conn.commit()
     finally:
         if own:
@@ -636,3 +819,553 @@ def job_exists_for_attempt(conn, customer_id: str, attempt_number: int) -> bool:
 # We need datetime/timezone for the job helpers above — import here to avoid
 # polluting the top of the file (db.py intentionally has minimal imports).
 from datetime import datetime, timezone
+
+
+# ---------------------------------------------------------------------------
+# Phase 6: Strategy performance helpers
+# ---------------------------------------------------------------------------
+
+def upsert_strategy_performance(conn, strategy: str, dimension_key: str,
+                                  dimension_value: str, provenance: str,
+                                  delta_attempts: int = 0,
+                                  delta_recoveries: int = 0,
+                                  delta_amount_recovered: float = 0.0,
+                                  delta_amount_attempted: float = 0.0,
+                                  delta_escalations: int = 0,
+                                  delta_time_hours: float = 0.0) -> None:
+    """Atomically increment strategy_performance counters for one bucket."""
+    conn.execute(
+        """
+        INSERT INTO strategy_performance
+            (strategy, dimension_key, dimension_value, provenance,
+             attempts, recoveries, amount_recovered, amount_attempted,
+             escalations, time_to_recovery_sum_hours, last_updated)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now','utc'))
+        ON CONFLICT(strategy, dimension_key, dimension_value, provenance) DO UPDATE SET
+            attempts               = attempts + excluded.attempts,
+            recoveries             = recoveries + excluded.recoveries,
+            amount_recovered       = amount_recovered + excluded.amount_recovered,
+            amount_attempted       = amount_attempted + excluded.amount_attempted,
+            escalations            = escalations + excluded.escalations,
+            time_to_recovery_sum_hours = time_to_recovery_sum_hours
+                                    + excluded.time_to_recovery_sum_hours,
+            last_updated           = datetime('now','utc')
+        """,
+        (strategy, dimension_key, dimension_value, provenance,
+         delta_attempts, delta_recoveries,
+         delta_amount_recovered, delta_amount_attempted,
+         delta_escalations, delta_time_hours),
+    )
+
+
+def get_strategy_performance(conn, strategy: str = None,
+                              dimension_key: str = None,
+                              dimension_value: str = None,
+                              provenance: str = None) -> list:
+    """Query strategy_performance with optional filters. Returns list of dicts."""
+    clauses, params = [], []
+    if strategy:
+        clauses.append("strategy = ?"); params.append(strategy)
+    if dimension_key:
+        clauses.append("dimension_key = ?"); params.append(dimension_key)
+    if dimension_value:
+        clauses.append("dimension_value = ?"); params.append(dimension_value)
+    if provenance:
+        clauses.append("provenance = ?"); params.append(provenance)
+    where = ("WHERE " + " AND ".join(clauses)) if clauses else ""
+    rows = conn.execute(
+        f"SELECT * FROM strategy_performance {where} ORDER BY strategy, dimension_key, dimension_value",
+        params,
+    ).fetchall()
+    return [dict(r) for r in rows]
+
+
+# ---------------------------------------------------------------------------
+# Phase 6: Experiment helpers
+# ---------------------------------------------------------------------------
+
+def create_experiment(conn, experiment_id: str, name: str, description: str,
+                      control_strategy: str, treatment_strategy: str,
+                      cohort_definition: str,
+                      merchant_category: str = None,
+                      failure_reason: str = None,
+                      min_sample_size: int = 30,
+                      created_by: str = "system") -> bool:
+    """Insert a new experiment row. Returns True on success."""
+    try:
+        conn.execute(
+            """
+            INSERT INTO experiments (
+                experiment_id, name, description, merchant_category, failure_reason,
+                control_strategy, treatment_strategy, cohort_definition,
+                status, min_sample_size, created_by, started_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'active', ?, ?,
+                      datetime('now','utc'))
+            """,
+            (experiment_id, name, description, merchant_category, failure_reason,
+             control_strategy, treatment_strategy, cohort_definition,
+             min_sample_size, created_by),
+        )
+        return True
+    except sqlite3.IntegrityError:
+        return False
+
+
+def get_experiment(conn, experiment_id: str) -> dict | None:
+    row = conn.execute(
+        "SELECT * FROM experiments WHERE experiment_id = ?", (experiment_id,)
+    ).fetchone()
+    return dict(row) if row else None
+
+
+def get_all_experiments(conn, status: str = None) -> list:
+    if status:
+        rows = conn.execute(
+            "SELECT * FROM experiments WHERE status = ? ORDER BY created_at DESC",
+            (status,),
+        ).fetchall()
+    else:
+        rows = conn.execute(
+            "SELECT * FROM experiments ORDER BY created_at DESC"
+        ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def assign_experiment_case(conn, experiment_id: str, customer_id: str,
+                            arm: str) -> bool:
+    """Assign a case to a control/treatment arm. Returns False if already assigned."""
+    try:
+        conn.execute(
+            """
+            INSERT INTO experiment_assignments (experiment_id, customer_id, arm)
+            VALUES (?, ?, ?)
+            """,
+            (experiment_id, customer_id, arm),
+        )
+        return True
+    except sqlite3.IntegrityError:
+        return False
+
+
+def get_experiment_assignments(conn, experiment_id: str) -> list:
+    rows = conn.execute(
+        "SELECT * FROM experiment_assignments WHERE experiment_id = ? ORDER BY id",
+        (experiment_id,),
+    ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def get_case_experiment_arm(conn, customer_id: str) -> dict | None:
+    """Return the active experiment assignment for a case, or None."""
+    row = conn.execute(
+        """
+        SELECT ea.*, e.control_strategy, e.treatment_strategy, e.status as exp_status
+        FROM experiment_assignments ea
+        JOIN experiments e ON ea.experiment_id = e.experiment_id
+        WHERE ea.customer_id = ? AND e.status = 'active'
+        ORDER BY ea.id DESC LIMIT 1
+        """,
+        (customer_id,),
+    ).fetchone()
+    return dict(row) if row else None
+
+
+def record_experiment_outcome(conn, experiment_id: str, customer_id: str,
+                               arm: str, strategy_used: str,
+                               outcome_status: str, amount_rupees: float,
+                               recovered: int,
+                               time_to_recovery_hours: float = None,
+                               execution_mode: str = "simulation") -> bool:
+    """Record the final outcome for a case in an experiment (once, immutable)."""
+    try:
+        conn.execute(
+            """
+            INSERT INTO experiment_outcomes (
+                experiment_id, customer_id, arm, strategy_used,
+                outcome_status, amount_rupees, recovered,
+                time_to_recovery_hours, execution_mode
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (experiment_id, customer_id, arm, strategy_used,
+             outcome_status, amount_rupees, recovered,
+             time_to_recovery_hours, execution_mode),
+        )
+        return True
+    except sqlite3.IntegrityError:
+        return False  # already recorded; immutable
+
+
+def get_experiment_outcomes(conn, experiment_id: str) -> list:
+    rows = conn.execute(
+        "SELECT * FROM experiment_outcomes WHERE experiment_id = ? ORDER BY id",
+        (experiment_id,),
+    ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def update_experiment_status(conn, experiment_id: str, status: str,
+                              ended_at: str = None) -> None:
+    conn.execute(
+        "UPDATE experiments SET status = ?, ended_at = ? WHERE experiment_id = ?",
+        (status, ended_at, experiment_id),
+    )
+
+
+# ---------------------------------------------------------------------------
+# Phase 6: Policy version helpers
+# ---------------------------------------------------------------------------
+
+def get_next_version_number(conn, merchant_category: str = "all") -> int:
+    """Return the next sequential version number for a merchant category."""
+    row = conn.execute(
+        "SELECT MAX(version_number) FROM policy_versions WHERE merchant_category = ?",
+        (merchant_category,),
+    ).fetchone()
+    current = row[0] if row and row[0] is not None else 0
+    return current + 1
+
+
+def create_policy_version(conn, version_id: str, merchant_category: str,
+                           strategy_params: str, reason: str,
+                           evidence_summary: str = None,
+                           created_by: str = "system",
+                           previous_version_id: str = None,
+                           expected_impact: str = None) -> dict:
+    """Create a new policy version in DRAFT status."""
+    version_number = get_next_version_number(conn, merchant_category)
+    conn.execute(
+        """
+        INSERT INTO policy_versions (
+            version_id, version_number, merchant_category,
+            strategy_params, status, created_by, reason,
+            evidence_summary, previous_version_id, expected_impact
+        ) VALUES (?, ?, ?, ?, 'draft', ?, ?, ?, ?, ?)
+        """,
+        (version_id, version_number, merchant_category,
+         strategy_params, created_by, reason,
+         evidence_summary, previous_version_id, expected_impact),
+    )
+    _append_policy_audit(conn, "version_created", version_id=version_id,
+                         actor=created_by, new_status="draft",
+                         notes=reason)
+    return {"version_id": version_id, "version_number": version_number}
+
+
+def transition_policy_version(conn, version_id: str, new_status: str,
+                               actor: str = "system",
+                               notes: str = None) -> bool:
+    """Move a policy version to a new status. Validates legal transitions."""
+    _LEGAL = {
+        "draft": {"recommended", "deprecated"},
+        "recommended": {"under_review", "deprecated"},
+        "under_review": {"approved", "deprecated"},
+        "approved": {"active", "deprecated"},
+        "active": {"deprecated", "rolled_back"},
+        "deprecated": set(),
+        "rolled_back": set(),
+    }
+    row = conn.execute(
+        "SELECT status FROM policy_versions WHERE version_id = ?", (version_id,)
+    ).fetchone()
+    if not row:
+        return False
+    current = row["status"]
+    if new_status not in _LEGAL.get(current, set()):
+        return False
+
+    now = datetime.now(timezone.utc).isoformat(timespec="seconds")
+    updates = {"status": new_status}
+    if new_status == "active":
+        updates["activated_at"] = now
+        updates["approved_by"] = actor
+        updates["approved_at"] = now
+        # Deprecate any other currently-active version for the same merchant
+        _deprecate_other_active(conn, version_id, actor)
+    elif new_status in ("deprecated", "rolled_back"):
+        updates["deprecated_at"] = now
+
+    set_clause = ", ".join(f"{k} = ?" for k in updates)
+    conn.execute(
+        f"UPDATE policy_versions SET {set_clause} WHERE version_id = ?",
+        list(updates.values()) + [version_id],
+    )
+    _append_policy_audit(conn, f"version_{new_status}", version_id=version_id,
+                         actor=actor, previous_status=current,
+                         new_status=new_status, notes=notes)
+    return True
+
+
+def _deprecate_other_active(conn, except_version_id: str, actor: str) -> None:
+    """Deprecate all currently-active versions except the given one (same merchant)."""
+    row = conn.execute(
+        "SELECT merchant_category FROM policy_versions WHERE version_id = ?",
+        (except_version_id,),
+    ).fetchone()
+    if not row:
+        return
+    cat = row["merchant_category"]
+    now = datetime.now(timezone.utc).isoformat(timespec="seconds")
+    others = conn.execute(
+        """SELECT version_id FROM policy_versions
+           WHERE status = 'active' AND merchant_category = ?
+             AND version_id != ?""",
+        (cat, except_version_id),
+    ).fetchall()
+    for r in others:
+        conn.execute(
+            "UPDATE policy_versions SET status = 'deprecated', deprecated_at = ? "
+            "WHERE version_id = ?",
+            (now, r["version_id"]),
+        )
+        _append_policy_audit(conn, "version_deprecated", version_id=r["version_id"],
+                             actor=actor, previous_status="active",
+                             new_status="deprecated",
+                             notes="Auto-deprecated on new version activation")
+
+
+def get_policy_version(conn, version_id: str) -> dict | None:
+    row = conn.execute(
+        "SELECT * FROM policy_versions WHERE version_id = ?", (version_id,)
+    ).fetchone()
+    return dict(row) if row else None
+
+
+def get_active_policy_version(conn, merchant_category: str = "all") -> dict | None:
+    row = conn.execute(
+        """SELECT * FROM policy_versions
+           WHERE status = 'active' AND merchant_category = ?
+           ORDER BY version_number DESC LIMIT 1""",
+        (merchant_category,),
+    ).fetchone()
+    return dict(row) if row else None
+
+
+def get_all_policy_versions(conn, merchant_category: str = None,
+                             status: str = None) -> list:
+    clauses, params = [], []
+    if merchant_category:
+        clauses.append("merchant_category = ?"); params.append(merchant_category)
+    if status:
+        clauses.append("status = ?"); params.append(status)
+    where = ("WHERE " + " AND ".join(clauses)) if clauses else ""
+    rows = conn.execute(
+        f"SELECT * FROM policy_versions {where} ORDER BY version_number DESC",
+        params,
+    ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def record_policy_performance(conn, version_id: str, cases_observed: int,
+                               recoveries: int, recovery_rate: float,
+                               amount_recovered: float, escalation_rate: float,
+                               measurement_window_days: int = 30,
+                               data_type: str = "actual") -> None:
+    conn.execute(
+        """
+        INSERT INTO policy_performance (
+            version_id, measurement_window_days, cases_observed,
+            recoveries, recovery_rate, amount_recovered,
+            escalation_rate, data_type
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        (version_id, measurement_window_days, cases_observed,
+         recoveries, recovery_rate, amount_recovered,
+         escalation_rate, data_type),
+    )
+
+
+def get_policy_performance(conn, version_id: str) -> list:
+    rows = conn.execute(
+        "SELECT * FROM policy_performance WHERE version_id = ? ORDER BY measured_at DESC",
+        (version_id,),
+    ).fetchall()
+    return [dict(r) for r in rows]
+
+
+# ---------------------------------------------------------------------------
+# Phase 6: Policy recommendation helpers
+# ---------------------------------------------------------------------------
+
+def create_policy_recommendation(conn, recommendation_id: str, title: str,
+                                   what_changes: str, why_evidence: str,
+                                   current_strategy: str,
+                                   recommended_strategy: str,
+                                   current_rate: float = None,
+                                   recommended_rate: float = None,
+                                   sample_size: int = 0,
+                                   estimated_incremental_rs: float = None,
+                                   confidence: str = "low",
+                                   data_source: str = "SIMULATION",
+                                   merchant_category: str = "all",
+                                   failure_reason: str = None,
+                                   experiment_id: str = None) -> bool:
+    try:
+        conn.execute(
+            """
+            INSERT INTO policy_recommendations (
+                recommendation_id, title, what_changes, why_evidence,
+                current_strategy, recommended_strategy,
+                current_rate, recommended_rate, sample_size,
+                estimated_incremental_rs, confidence, data_source,
+                status, merchant_category, failure_reason, experiment_id
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'recommended', ?, ?, ?)
+            """,
+            (recommendation_id, title, what_changes, why_evidence,
+             current_strategy, recommended_strategy,
+             current_rate, recommended_rate, sample_size,
+             estimated_incremental_rs, confidence, data_source,
+             merchant_category, failure_reason, experiment_id),
+        )
+        _append_policy_audit(conn, "recommendation_created",
+                             recommendation_id=recommendation_id,
+                             new_status="recommended")
+        return True
+    except sqlite3.IntegrityError:
+        return False
+
+
+def get_recommendation(conn, recommendation_id: str) -> dict | None:
+    row = conn.execute(
+        "SELECT * FROM policy_recommendations WHERE recommendation_id = ?",
+        (recommendation_id,),
+    ).fetchone()
+    return dict(row) if row else None
+
+
+def get_all_recommendations(conn, status: str = None,
+                             merchant_category: str = None) -> list:
+    clauses, params = [], []
+    if status:
+        clauses.append("status = ?"); params.append(status)
+    if merchant_category:
+        clauses.append("merchant_category = ?"); params.append(merchant_category)
+    where = ("WHERE " + " AND ".join(clauses)) if clauses else ""
+    rows = conn.execute(
+        f"SELECT * FROM policy_recommendations {where} ORDER BY created_at DESC",
+        params,
+    ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def update_recommendation_status(conn, recommendation_id: str, new_status: str,
+                                   actor: str = "system",
+                                   rejection_reason: str = None,
+                                   policy_version_id: str = None) -> bool:
+    _LEGAL = {
+        "draft": {"recommended", "rejected"},
+        "recommended": {"under_review", "approved", "rejected", "superseded"},
+        "under_review": {"approved", "rejected"},
+        "approved": {"superseded"},
+        "rejected": set(),
+        "superseded": set(),
+    }
+    row = conn.execute(
+        "SELECT status FROM policy_recommendations WHERE recommendation_id = ?",
+        (recommendation_id,),
+    ).fetchone()
+    if not row:
+        return False
+    current = row["status"]
+    if new_status not in _LEGAL.get(current, set()):
+        return False
+
+    now = datetime.now(timezone.utc).isoformat(timespec="seconds")
+    updates: dict = {"status": new_status}
+    if new_status == "approved":
+        updates["approved_at"] = now
+        updates["approved_by"] = actor
+        if policy_version_id:
+            updates["policy_version_id"] = policy_version_id
+    elif new_status == "rejected":
+        updates["rejected_at"] = now
+        updates["rejected_by"] = actor
+        if rejection_reason:
+            updates["rejection_reason"] = rejection_reason
+    elif new_status in ("under_review",):
+        updates["reviewed_at"] = now
+        updates["reviewed_by"] = actor
+
+    set_clause = ", ".join(f"{k} = ?" for k in updates)
+    conn.execute(
+        f"UPDATE policy_recommendations SET {set_clause} WHERE recommendation_id = ?",
+        list(updates.values()) + [recommendation_id],
+    )
+    _append_policy_audit(conn, f"recommendation_{new_status}",
+                         recommendation_id=recommendation_id,
+                         actor=actor, previous_status=current,
+                         new_status=new_status, notes=rejection_reason)
+    return True
+
+
+# ---------------------------------------------------------------------------
+# Phase 6: Policy audit log
+# ---------------------------------------------------------------------------
+
+def _append_policy_audit(conn, action_type: str,
+                          version_id: str = None,
+                          recommendation_id: str = None,
+                          actor: str = "system",
+                          previous_status: str = None,
+                          new_status: str = None,
+                          notes: str = None) -> None:
+    conn.execute(
+        """
+        INSERT INTO policy_audit_log
+            (action_type, version_id, recommendation_id, actor,
+             previous_status, new_status, notes)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+        """,
+        (action_type, version_id, recommendation_id, actor,
+         previous_status, new_status, notes),
+    )
+
+
+def get_policy_audit_log(conn, version_id: str = None,
+                          recommendation_id: str = None,
+                          limit: int = 200) -> list:
+    clauses, params = [], []
+    if version_id:
+        clauses.append("version_id = ?"); params.append(version_id)
+    if recommendation_id:
+        clauses.append("recommendation_id = ?"); params.append(recommendation_id)
+    where = ("WHERE " + " AND ".join(clauses)) if clauses else ""
+    rows = conn.execute(
+        f"SELECT * FROM policy_audit_log {where} ORDER BY action_at DESC LIMIT ?",
+        params + [limit],
+    ).fetchall()
+    return [dict(r) for r in rows]
+
+
+# ---------------------------------------------------------------------------
+# Phase 6: Phase 6 schema migration (run inside _migrate)
+# ---------------------------------------------------------------------------
+
+def _migrate_phase6(conn) -> None:
+    """Apply Phase 6 table creation (idempotent via CREATE IF NOT EXISTS)."""
+    # All Phase 6 tables are created inside _migrate() via executescript above.
+    # This function handles additive column migrations for Phase 6 tables on
+    # pre-existing databases that already have the tables but are missing new columns.
+    existing_pv = {row[1] for row in conn.execute("PRAGMA table_info(policy_versions)")}
+    additive_pv = {
+        "expected_impact": "TEXT",
+        "previous_version_id": "TEXT",
+    }
+    for col, decl in additive_pv.items():
+        if col not in existing_pv:
+            try:
+                conn.execute(f"ALTER TABLE policy_versions ADD COLUMN {col} {decl}")
+            except Exception:
+                pass
+
+    existing_pr = {row[1] for row in conn.execute("PRAGMA table_info(policy_recommendations)")}
+    additive_pr = {
+        "failure_reason": "TEXT",
+        "experiment_id": "TEXT",
+        "policy_version_id": "TEXT",
+    }
+    for col, decl in additive_pr.items():
+        if col not in existing_pr:
+            try:
+                conn.execute(f"ALTER TABLE policy_recommendations ADD COLUMN {col} {decl}")
+            except Exception:
+                pass

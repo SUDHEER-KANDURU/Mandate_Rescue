@@ -1662,6 +1662,531 @@ def _investigate_question(question: str, conn) -> dict:
     }
 
 
+# =============================================================================
+# PHASE 6 — Closed-Loop Learning endpoints
+# =============================================================================
+
+# Import Phase 6 modules defensively so the app still runs even if a module
+# has a syntax error (useful during iterative development).
+try:
+    import outcome_attribution as _oa
+    import experimentation as _exp
+    import experiment_evaluator as _eval
+    import segment_learning as _seg
+    import policy_engine as _policy
+    import strategy_drift as _drift
+    _P6_AVAILABLE = True
+except Exception as _p6_err:
+    _P6_AVAILABLE = False
+    import logging as _logging
+    _logging.getLogger("mandate_rescue.app").warning(
+        "Phase 6 modules not fully available: %s", _p6_err
+    )
+
+# Add Phase 6 protected paths
+_PROTECTED_PATHS = _PROTECTED_PATHS | frozenset({
+    "/api/learning/backfill",
+    "/api/learning/recommendations/generate",
+    "/api/learning/recommendations/approve",
+    "/api/learning/recommendations/reject",
+    "/api/learning/policy/rollback",
+    "/api/learning/policy/measure",
+    "/api/learning/experiments/create",
+    "/api/learning/experiments/complete",
+})
+
+
+def _p6_unavailable():
+    return jsonify({
+        "ok": False,
+        "error": "phase6_unavailable",
+        "message": "Phase 6 learning modules are not available.",
+    }), 503
+
+
+# --- Outcome Attribution ---
+
+@app.route("/api/learning/attribution/summary")
+def api_learning_attribution_summary():
+    """Summary of outcome attribution coverage and data provenance breakdown."""
+    if not _P6_AVAILABLE:
+        return _p6_unavailable()
+    conn = db.get_connection()
+    try:
+        result = _oa.get_attribution_summary(conn)
+    finally:
+        conn.close()
+    return jsonify(result)
+
+
+@app.route("/api/learning/backfill", methods=["POST"])
+def api_learning_backfill():
+    """Backfill strategy_performance from all existing resolved cases.
+
+    Safe to run multiple times (idempotent upsert semantics).
+    Also runs outcome_attribution for all terminal cases and records
+    experiment outcomes for any assigned cases.
+    Protected by X-API-Key.
+    """
+    if not _P6_AVAILABLE:
+        return _p6_unavailable()
+    conn = db.get_connection()
+    try:
+        # 1. Backfill strategy_performance
+        backfill = _oa.backfill_from_audit(conn)
+        # 2. Record experiment outcomes for all terminal cases
+        exp_recorded = 0
+        for exp in db.get_all_experiments(conn, status="active"):
+            result = _exp.record_all_terminal_outcomes(conn, exp["experiment_id"])
+            exp_recorded += result.get("recorded", 0)
+        # 3. Measure current active policy performance
+        perf = _policy.record_current_policy_performance(conn)
+    finally:
+        conn.close()
+    return jsonify({
+        "ok": True,
+        "attribution_backfill": backfill,
+        "experiment_outcomes_recorded": exp_recorded,
+        "policy_performance": perf,
+    })
+
+
+# --- Strategy Performance ---
+
+@app.route("/api/learning/strategy-performance")
+def api_learning_strategy_performance():
+    """All strategy performance records, optionally filtered by dimension."""
+    if not _P6_AVAILABLE:
+        return _p6_unavailable()
+    dimension_key = request.args.get("dimension_key")
+    dimension_value = request.args.get("dimension_value")
+    provenance = request.args.get("provenance")
+
+    conn = db.get_connection()
+    try:
+        rows = db.get_strategy_performance(
+            conn,
+            dimension_key=dimension_key or None,
+            dimension_value=dimension_value or None,
+            provenance=provenance or None,
+        )
+        # Enrich with computed recovery_rate
+        for r in rows:
+            attempts = r.get("attempts", 0)
+            r["recovery_rate"] = round(r.get("recoveries", 0) / attempts, 4) if attempts else 0.0
+    finally:
+        conn.close()
+    return jsonify({"strategy_performance": rows, "count": len(rows)})
+
+
+@app.route("/api/learning/segment-learning")
+def api_learning_segment():
+    """Full strategy learning summary across all dimensions with fallback hierarchy."""
+    if not _P6_AVAILABLE:
+        return _p6_unavailable()
+    conn = db.get_connection()
+    try:
+        result = _seg.full_learning_summary(conn)
+    finally:
+        conn.close()
+    return jsonify(result)
+
+
+@app.route("/api/learning/strategy-drift")
+def api_learning_drift():
+    """Detect strategy performance degradation over the recent window."""
+    if not _P6_AVAILABLE:
+        return _p6_unavailable()
+    conn = db.get_connection()
+    try:
+        result = _drift.detect_strategy_drift(conn)
+    finally:
+        conn.close()
+    return jsonify(result)
+
+
+# --- Experiments ---
+
+@app.route("/api/learning/experiments", methods=["GET"])
+def api_learning_experiments_list():
+    """List all experiments with status and arm sample sizes."""
+    if not _P6_AVAILABLE:
+        return _p6_unavailable()
+    status_filter = request.args.get("status")
+    conn = db.get_connection()
+    try:
+        exps = db.get_all_experiments(conn, status=status_filter or None)
+        result = []
+        for exp in exps:
+            status_info = _exp.get_experiment_status(conn, exp["experiment_id"])
+            result.append(status_info)
+    finally:
+        conn.close()
+    return jsonify({"experiments": result, "count": len(result)})
+
+
+@app.route("/api/learning/experiments/create", methods=["POST"])
+def api_learning_experiment_create():
+    """Create a new A/B experiment.
+
+    Body: {
+      name, control_strategy, treatment_strategy,
+      description?, merchant_category?, failure_reason?,
+      min_sample_size?, created_by?
+    }
+    Protected by X-API-Key.
+    """
+    if not _P6_AVAILABLE:
+        return _p6_unavailable()
+    payload = request.get_json(silent=True) or {}
+    required = ("name", "control_strategy", "treatment_strategy")
+    for f in required:
+        if not payload.get(f):
+            return jsonify({"ok": False, "message": f"'{f}' is required."}), 400
+
+    conn = db.get_connection()
+    try:
+        experiment_id = _exp.create_experiment(
+            conn,
+            name=payload["name"],
+            control_strategy=payload["control_strategy"],
+            treatment_strategy=payload["treatment_strategy"],
+            description=payload.get("description", ""),
+            merchant_category=payload.get("merchant_category"),
+            failure_reason=payload.get("failure_reason"),
+            min_sample_size=int(payload.get("min_sample_size", 10)),
+            created_by=payload.get("created_by", "api"),
+        )
+        # Auto-assign existing eligible cases
+        assignment = _exp.assign_cases(conn, experiment_id)
+    finally:
+        conn.close()
+    return jsonify({
+        "ok": True,
+        "experiment_id": experiment_id,
+        "assignment": assignment,
+    }), 201
+
+
+@app.route("/api/learning/experiments/<experiment_id>")
+def api_learning_experiment_detail(experiment_id):
+    """Detailed experiment status + evaluation results."""
+    if not _P6_AVAILABLE:
+        return _p6_unavailable()
+    conn = db.get_connection()
+    try:
+        status = _exp.get_experiment_status(conn, experiment_id)
+        if "error" in status:
+            return jsonify({"error": status["error"]}), 404
+        evaluation = _eval.evaluate_experiment(conn, experiment_id)
+    finally:
+        conn.close()
+    return jsonify({"status": status, "evaluation": evaluation})
+
+
+@app.route("/api/learning/experiments/complete", methods=["POST"])
+def api_learning_experiment_complete():
+    """Mark an experiment completed and record all remaining terminal outcomes.
+
+    Body: { "experiment_id": "..." }
+    Protected by X-API-Key.
+    """
+    if not _P6_AVAILABLE:
+        return _p6_unavailable()
+    payload = request.get_json(silent=True) or {}
+    experiment_id = (payload.get("experiment_id") or "").strip()
+    if not experiment_id:
+        return jsonify({"ok": False, "message": "experiment_id is required."}), 400
+
+    conn = db.get_connection()
+    try:
+        result = _exp.complete_experiment(conn, experiment_id)
+    finally:
+        conn.close()
+    if not result.get("completed"):
+        return jsonify({"ok": False, **result}), 400
+    return jsonify({"ok": True, **result})
+
+
+# --- Policy Recommendations ---
+
+@app.route("/api/learning/recommendations", methods=["GET"])
+def api_learning_recommendations_list():
+    """List policy recommendations. Optionally filter by status."""
+    if not _P6_AVAILABLE:
+        return _p6_unavailable()
+    status_filter = request.args.get("status")
+    merchant_cat = request.args.get("merchant_category")
+    conn = db.get_connection()
+    try:
+        recs = db.get_all_recommendations(
+            conn,
+            status=status_filter or None,
+            merchant_category=merchant_cat or None,
+        )
+        import json as _json
+        for r in recs:
+            try:
+                r["why_evidence_parsed"] = _json.loads(r.get("why_evidence") or "{}")
+            except Exception:
+                r["why_evidence_parsed"] = {}
+    finally:
+        conn.close()
+    return jsonify({"recommendations": recs, "count": len(recs)})
+
+
+@app.route("/api/learning/recommendations/generate", methods=["POST"])
+def api_learning_recommendations_generate():
+    """Scan strategy_performance and generate new recommendations.
+
+    Only creates recommendations where evidence meets the minimum threshold.
+    Does not overwrite existing active recommendations.
+    Protected by X-API-Key.
+    """
+    if not _P6_AVAILABLE:
+        return _p6_unavailable()
+    conn = db.get_connection()
+    try:
+        new_recs = _policy.generate_recommendations(conn)
+    finally:
+        conn.close()
+    return jsonify({
+        "ok": True,
+        "new_recommendations": len(new_recs),
+        "recommendations": new_recs,
+    })
+
+
+@app.route("/api/learning/recommendations/<recommendation_id>")
+def api_learning_recommendation_detail(recommendation_id):
+    """Full recommendation detail including parsed evidence trail."""
+    if not _P6_AVAILABLE:
+        return _p6_unavailable()
+    conn = db.get_connection()
+    try:
+        rec = db.get_recommendation(conn, recommendation_id)
+        if not rec:
+            return jsonify({"error": "recommendation not found"}), 404
+        import json as _json
+        try:
+            rec["why_evidence_parsed"] = _json.loads(rec.get("why_evidence") or "{}")
+        except Exception:
+            rec["why_evidence_parsed"] = {}
+        # Include audit trail for this recommendation
+        audit = db.get_policy_audit_log(conn, recommendation_id=recommendation_id)
+    finally:
+        conn.close()
+    return jsonify({"recommendation": rec, "audit_trail": audit})
+
+
+@app.route("/api/learning/recommendations/approve", methods=["POST"])
+def api_learning_recommendation_approve():
+    """Approve a recommendation and activate the resulting policy version.
+
+    Body: { "recommendation_id": "...", "actor": "..." }
+    Creates a new DRAFT policy version from the recommendation, transitions it
+    through recommended → under_review → approved → active in one step.
+    Protected by X-API-Key.
+    """
+    if not _P6_AVAILABLE:
+        return _p6_unavailable()
+    payload = request.get_json(silent=True) or {}
+    rec_id = (payload.get("recommendation_id") or "").strip()
+    actor = (payload.get("actor") or "dashboard_user").strip()
+    if not rec_id:
+        return jsonify({"ok": False, "message": "recommendation_id is required."}), 400
+
+    conn = db.get_connection()
+    try:
+        result = _policy.approve_recommendation(conn, rec_id, actor=actor)
+    finally:
+        conn.close()
+    if not result.get("approved"):
+        return jsonify({"ok": False, **result}), 400
+    return jsonify({"ok": True, **result})
+
+
+@app.route("/api/learning/recommendations/reject", methods=["POST"])
+def api_learning_recommendation_reject():
+    """Reject a recommendation with a reason.
+
+    Body: { "recommendation_id": "...", "actor": "...", "reason": "..." }
+    Protected by X-API-Key.
+    """
+    if not _P6_AVAILABLE:
+        return _p6_unavailable()
+    payload = request.get_json(silent=True) or {}
+    rec_id = (payload.get("recommendation_id") or "").strip()
+    actor = (payload.get("actor") or "dashboard_user").strip()
+    reason = (payload.get("reason") or "").strip()
+    if not rec_id:
+        return jsonify({"ok": False, "message": "recommendation_id is required."}), 400
+    if not reason:
+        return jsonify({"ok": False, "message": "reason is required for rejection."}), 400
+
+    conn = db.get_connection()
+    try:
+        ok = _policy.reject_recommendation(conn, rec_id, actor=actor, reason=reason)
+    finally:
+        conn.close()
+    return jsonify({"ok": ok, "recommendation_id": rec_id})
+
+
+# --- Policy Versions ---
+
+@app.route("/api/learning/policy/active")
+def api_learning_policy_active():
+    """Return the currently active policy version (or rule-based defaults)."""
+    if not _P6_AVAILABLE:
+        return _p6_unavailable()
+    merchant_cat = request.args.get("merchant_category", "all")
+    conn = db.get_connection()
+    try:
+        result = _policy.get_active_policy(conn, merchant_cat)
+    finally:
+        conn.close()
+    return jsonify(result)
+
+
+@app.route("/api/learning/policy/history")
+def api_learning_policy_history():
+    """Full policy version history for a merchant category."""
+    if not _P6_AVAILABLE:
+        return _p6_unavailable()
+    merchant_cat = request.args.get("merchant_category", "all")
+    conn = db.get_connection()
+    try:
+        history = _policy.get_policy_history(conn, merchant_cat)
+    finally:
+        conn.close()
+    return jsonify({"history": history, "count": len(history)})
+
+
+@app.route("/api/learning/policy/<version_id>")
+def api_learning_policy_version_detail(version_id):
+    """Full detail for one policy version including performance records and audit."""
+    if not _P6_AVAILABLE:
+        return _p6_unavailable()
+    conn = db.get_connection()
+    try:
+        version = db.get_policy_version(conn, version_id)
+        if not version:
+            return jsonify({"error": "policy version not found"}), 404
+        perf = db.get_policy_performance(conn, version_id)
+        audit = db.get_policy_audit_log(conn, version_id=version_id)
+        import json as _json
+        version["strategy_params"] = _policy._parse_json_field(version.get("strategy_params"))
+        version["evidence_summary"] = _policy._parse_json_field(version.get("evidence_summary"))
+        version["expected_impact"] = _policy._parse_json_field(version.get("expected_impact"))
+    finally:
+        conn.close()
+    return jsonify({
+        "version": version,
+        "performance": perf,
+        "audit_trail": audit,
+    })
+
+
+@app.route("/api/learning/policy/measure", methods=["POST"])
+def api_learning_policy_measure():
+    """Record a current-performance snapshot for the active policy version.
+
+    Protected by X-API-Key.
+    """
+    if not _P6_AVAILABLE:
+        return _p6_unavailable()
+    conn = db.get_connection()
+    try:
+        result = _policy.record_current_policy_performance(conn)
+    finally:
+        conn.close()
+    return jsonify({"ok": True, **result})
+
+
+@app.route("/api/learning/policy/rollback", methods=["POST"])
+def api_learning_policy_rollback():
+    """Roll back to a specific previous policy version.
+
+    Body: { "target_version_id": "...", "actor": "...", "reason": "..." }
+    - Deprecates the currently active version
+    - Reactivates the target version
+    - Creates audit events for both changes
+    - Historical performance records are preserved, NOT modified
+    Protected by X-API-Key.
+    """
+    if not _P6_AVAILABLE:
+        return _p6_unavailable()
+    payload = request.get_json(silent=True) or {}
+    target_id = (payload.get("target_version_id") or "").strip()
+    actor = (payload.get("actor") or "dashboard_user").strip()
+    reason = (payload.get("reason") or "").strip()
+    if not target_id:
+        return jsonify({"ok": False, "message": "target_version_id is required."}), 400
+    if not reason:
+        return jsonify({"ok": False, "message": "reason is required for rollback."}), 400
+
+    conn = db.get_connection()
+    try:
+        result = _policy.rollback_to_version(conn, target_id, actor=actor, reason=reason)
+    finally:
+        conn.close()
+    if not result.get("rolled_back"):
+        return jsonify({"ok": False, **result}), 400
+    return jsonify({"ok": True, **result})
+
+
+@app.route("/api/learning/policy/audit-log")
+def api_learning_policy_audit_log():
+    """Full policy governance audit log — every approval, activation, rollback."""
+    if not _P6_AVAILABLE:
+        return _p6_unavailable()
+    version_id = request.args.get("version_id")
+    rec_id = request.args.get("recommendation_id")
+    try:
+        limit = min(int(request.args.get("limit", 100)), 500)
+    except (TypeError, ValueError):
+        limit = 100
+    conn = db.get_connection()
+    try:
+        entries = db.get_policy_audit_log(
+            conn,
+            version_id=version_id or None,
+            recommendation_id=rec_id or None,
+            limit=limit,
+        )
+    finally:
+        conn.close()
+    return jsonify({"audit_log": entries, "count": len(entries)})
+
+
+# --- Learning Dashboard Summary ---
+
+@app.route("/api/learning/dashboard")
+def api_learning_dashboard():
+    """Single-call payload for the Learning Dashboard.
+
+    Returns:
+      - active_policy: current version or rule-based defaults
+      - performance_vs_previous: before/after comparison
+      - open_recommendations: pending review items
+      - recent_experiments: last 5 experiments with evaluation
+      - strategy_learning: provenance summary
+      - attribution_summary: coverage stats
+      - policy_history_recent: last 5 versions
+      - strategy_drift: current drift alerts
+    """
+    if not _P6_AVAILABLE:
+        return _p6_unavailable()
+    conn = db.get_connection()
+    try:
+        summary = _policy.learning_dashboard_summary(conn)
+        drift = _drift.detect_strategy_drift(conn)
+        summary["strategy_drift"] = drift
+    finally:
+        conn.close()
+    return jsonify(summary)
+
+
 if __name__ == "__main__":
     db.init_db()
     # Phase 4: reset any stale claimed jobs before serving (handles process restart).

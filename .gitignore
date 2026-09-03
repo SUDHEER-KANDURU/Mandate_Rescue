@@ -23,6 +23,14 @@ Thumbs.db
 scripts/dev/*.jpg
 .coverage
 htmlcov/
+# Temp test output files (never commit)
+test_output.txt
+test_p6*.txt
+*.test.txt
+# Phase 6 verification scripts (temp)
+_verify_p6.py
+_debug_rollback.py
+_phase6_docs_section.txt
 
 # Docker
 *.db-shm
