@@ -56,27 +56,34 @@ EXCEPTION_STATUSES = ("escalated", "broken_promise")
 def rejected_webhooks(conn=None):
     """Return events blocked at ingestion for failing signature verification.
 
-    Each entry is a real `webhook_rejected` audit row joined to its case, so the UI
-    can visibly prove the security check works.
+    Performance: single JOIN query replaces the previous N+1 pattern
+    (get_all_audit + per-row get_case).
     """
     own = conn is None
     if own:
         conn = db.get_connection()
     try:
-        result = []
-        for row in db.get_all_audit(conn):
-            if row["event_type"] != "webhook_rejected":
-                continue
-            case = db.get_case(conn, row["customer_id"])
-            result.append({
-                "customer_id": row["customer_id"],
-                "raw_event_type": case.get("raw_event_type") if case else None,
-                "amount": float(case["amount"]) if case else None,
-                "failure_reason": case.get("failure_reason") if case else None,
-                "event_timestamp": row["event_timestamp"],
-                "reason": row["reasoning_text"],
-            })
-        return result
+        rows = conn.execute(
+            """
+            SELECT a.customer_id, a.event_timestamp, a.reasoning_text,
+                   m.raw_event_type, m.amount, m.failure_reason
+            FROM audit_log a
+            LEFT JOIN mandate_failures m ON a.customer_id = m.customer_id
+            WHERE a.event_type = 'webhook_rejected'
+            ORDER BY a.event_id
+            """
+        ).fetchall()
+        return [
+            {
+                "customer_id": r["customer_id"],
+                "raw_event_type": r["raw_event_type"],
+                "amount": float(r["amount"]) if r["amount"] is not None else None,
+                "failure_reason": r["failure_reason"],
+                "event_timestamp": r["event_timestamp"],
+                "reason": r["reasoning_text"],
+            }
+            for r in rows
+        ]
     finally:
         if own:
             conn.close()
@@ -85,28 +92,53 @@ def rejected_webhooks(conn=None):
 def exceptions(conn=None):
     """Return the first-class exceptions list: every case that ended unrecovered.
 
-    Each entry carries the last audit action + reasoning so the panel is honest.
+    Performance: one JOIN query to get the last audit action per case replaces
+    the previous N+1 pattern (get_all_cases + per-case get_audit_for_case).
     """
     own = conn is None
     if own:
         conn = db.get_connection()
     try:
+        # Fetch all exception cases in one query.
+        cases = conn.execute(
+            """
+            SELECT customer_id, amount, failure_reason, merchant_category, case_status
+            FROM mandate_failures
+            WHERE case_status IN ('escalated', 'broken_promise')
+            ORDER BY amount DESC
+            """
+        ).fetchall()
+        if not cases:
+            return []
+        # Fetch the last audit event for each of those customer_ids in one query.
+        cids = tuple(r["customer_id"] for r in cases)
+        placeholders = ",".join("?" * len(cids))
+        last_events = conn.execute(
+            f"""
+            SELECT a.customer_id, a.action_taken, a.reasoning_text
+            FROM audit_log a
+            INNER JOIN (
+                SELECT customer_id, MAX(event_id) AS max_eid
+                FROM audit_log
+                WHERE customer_id IN ({placeholders})
+                GROUP BY customer_id
+            ) last ON a.customer_id = last.customer_id AND a.event_id = last.max_eid
+            """,
+            cids,
+        ).fetchall()
+        last_by_cid = {r["customer_id"]: r for r in last_events}
         result = []
-        for case in db.get_all_cases(conn):
-            if case["case_status"] not in EXCEPTION_STATUSES:
-                continue
-            trail = db.get_audit_for_case(conn, case["customer_id"])
-            last = trail[-1] if trail else None
+        for c in cases:
+            last = last_by_cid.get(c["customer_id"])
             result.append({
-                "customer_id": case["customer_id"],
-                "amount": float(case["amount"]),
-                "failure_reason": case["failure_reason"],
-                "merchant_category": case["merchant_category"],
-                "case_status": case["case_status"],
+                "customer_id": c["customer_id"],
+                "amount": float(c["amount"]),
+                "failure_reason": c["failure_reason"],
+                "merchant_category": c["merchant_category"],
+                "case_status": c["case_status"],
                 "last_action": last["action_taken"] if last else "",
                 "why_unrecovered": last["reasoning_text"] if last else "",
             })
-        result.sort(key=lambda r: r["amount"], reverse=True)
         return result
     finally:
         if own:

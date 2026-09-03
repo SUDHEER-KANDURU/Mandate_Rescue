@@ -85,6 +85,20 @@ import razorpay_adapter
 # Phase 4: scheduler, execution service, Razorpay credential probe.
 import scheduler as scheduler_module
 import payment_executor as executor_module
+# Phase 5: intelligence + adaptive modules (imported defensively)
+try:
+    import intelligence as intelligence_module
+    import risk_engine as risk_engine_module
+    import adaptive_policy as adaptive_policy_module
+    import economic_value as economic_value_module
+    import anomaly_detector as anomaly_detector_module
+    _P5_AVAILABLE = True
+except Exception as _p5_err:
+    _P5_AVAILABLE = False
+    import logging as _logging
+    _logging.getLogger("mandate_rescue.app").warning(
+        "Phase 5 modules not fully available: %s", _p5_err
+    )
 
 # Templates and static assets live in the sibling frontend/ folder.
 _PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -601,10 +615,20 @@ def api_metrics():
     return jsonify({"agent": core, "baseline": base, "dumb_persistence": dumb})
 
 
-def _case_summary(case):
-    """Build a case row for the table: score + salary-window badge + R13-R16 fields."""
+def _case_summary(case, ml_prob=None):
+    """Build a case row for the table: score + salary-window badge + R13-R16 fields.
+
+    ``ml_prob`` is pre-computed by ``api_cases`` via the batch predictor to avoid
+    the O(N × DataFrame-construction) bottleneck.  When called for a single case
+    (e.g. /api/cases/<id>/audit) it falls back to the per-case predictor.
+    """
     score, factors = scoring.score_case(case)
     window = salary_window.infer_window(case)
+    # Compute health score once; reuse for both health_score and health_band fields.
+    h_score = health_module.health_score(
+        case.get("past_payment_success_rate", 0.0), case.get("past_retry_count", 0))
+    if ml_prob is None:
+        ml_prob = ml_predict.predict_recovery_probability(case)
     return {
         "customer_id": case["customer_id"],
         "amount": float(case["amount"]),
@@ -621,13 +645,11 @@ def _case_summary(case):
         "over_limit": float(case["amount"]) > float(case.get("mandate_limit") or 5000),
         "compliance_status": case.get("compliance_status"),
         "dunning_stage": case.get("dunning_stage", 0),
-        "health_score": health_module.health_score(
-            case.get("past_payment_success_rate", 0.0), case.get("past_retry_count", 0)),
-        "health_band": health_module.health_band(health_module.health_score(
-            case.get("past_payment_success_rate", 0.0), case.get("past_retry_count", 0))),
+        "health_score": h_score,
+        "health_band": health_module.health_band(h_score),
         # Additive, non-decision ML prediction shown alongside the rule-based score.
         # None when the model has not been trained. Never affects agent behavior.
-        "ml_recovery_probability": ml_predict.predict_recovery_probability(case),
+        "ml_recovery_probability": ml_prob,
         # Provenance: 'razorpay_live' for a case that arrived via a real, signature-
         # verified Razorpay webhook (see /api/webhooks/razorpay); 'synthetic' for the
         # seeded demo data. Purely informational — never affects scoring/strategy.
@@ -637,12 +659,20 @@ def _case_summary(case):
 
 @app.route("/api/cases")
 def api_cases():
-    """All cases with score + status, sorted by score descending (triage order)."""
+    """All cases with score + status, sorted by score descending (triage order).
+
+    Performance: ML predictions are computed once per request via predict_batch()
+    (single DataFrame + single model.predict_proba call) rather than N individual
+    per-case calls. health_score is computed once per case instead of twice.
+    """
     conn = db.get_connection()
     try:
-        cases = [_case_summary(c) for c in db.get_all_cases(conn)]
+        raw_cases = db.get_all_cases(conn)
     finally:
         conn.close()
+    # Batch ML predictions: one call for all N cases instead of N individual calls.
+    ml_probs = ml_predict.predict_batch(raw_cases)
+    cases = [_case_summary(c, ml_prob=p) for c, p in zip(raw_cases, ml_probs)]
     cases.sort(key=lambda c: c["score"], reverse=True)
     return jsonify(cases)
 
@@ -817,6 +847,9 @@ def api_activity():
     Does not change any agent/scoring/compliance behavior; it simply surfaces the
     most recent events for the dashboard's Activity feed. `limit` (default 40) caps
     how many rows are returned.
+
+    Performance: uses a single DESC LIMIT query instead of loading all rows into
+    Python and slicing.
     """
     try:
         limit = int(request.args.get("limit", 40))
@@ -826,25 +859,27 @@ def api_activity():
 
     conn = db.get_connection()
     try:
-        rows = db.get_all_audit(conn)
+        rows = conn.execute(
+            "SELECT * FROM audit_log ORDER BY event_id DESC LIMIT ?", (limit,)
+        ).fetchall()
+        total = conn.execute("SELECT COUNT(*) FROM audit_log").fetchone()[0]
     finally:
         conn.close()
-    # get_all_audit returns ascending by event_id; take the newest `limit`, newest first.
-    recent = list(reversed(rows))[:limit]
+    # Rows come back newest-first; present as-is (no Python reversal needed).
     events = [
         {
-            "event_id": r.get("event_id"),
-            "customer_id": r.get("customer_id"),
-            "event_timestamp": r.get("event_timestamp"),
-            "event_type": r.get("event_type"),
-            "action_taken": r.get("action_taken"),
-            "outcome": r.get("outcome"),
-            "attempt_number": r.get("attempt_number"),
-            "case_status_after": r.get("case_status_after"),
+            "event_id": r["event_id"],
+            "customer_id": r["customer_id"],
+            "event_timestamp": r["event_timestamp"],
+            "event_type": r["event_type"],
+            "action_taken": r["action_taken"],
+            "outcome": r["outcome"],
+            "attempt_number": r["attempt_number"],
+            "case_status_after": r["case_status_after"],
         }
-        for r in recent
+        for r in rows
     ]
-    return jsonify({"events": events, "total": len(rows)})
+    return jsonify({"events": events, "total": total})
 
 
 @app.route("/api/messages/<customer_id>")
@@ -1169,6 +1204,462 @@ def api_case_jobs(customer_id):
     finally:
         conn.close()
     return jsonify({"customer_id": customer_id, "jobs": jobs})
+
+
+
+# =============================================================================
+# PHASE 5 — Intelligence, Risk, Anomaly, Investigate endpoints
+# =============================================================================
+
+def _p5_unavailable():
+    return jsonify({
+        "ok": False,
+        "error": "phase5_unavailable",
+        "message": "Phase 5 intelligence modules are not available.",
+    }), 503
+
+
+@app.route("/api/intelligence/summary")
+def api_intelligence_summary():
+    """Full intelligence summary: strategy outcomes, failure-reason stats,
+    counterfactual revenue, merchant-specific learning — in one call.
+
+    Optional query param: simulation=false to skip Monte Carlo strategy comparison
+    (faster, suitable for the live dashboard overview).
+    """
+    if not _P5_AVAILABLE:
+        return _p5_unavailable()
+    include_sim = request.args.get("simulation", "false").lower() != "false"
+    conn = db.get_connection()
+    try:
+        summary = intelligence_module.full_summary(conn, include_simulation=include_sim)
+    finally:
+        conn.close()
+    return jsonify(summary)
+
+
+@app.route("/api/intelligence/by-failure-reason")
+def api_intelligence_failure_reason():
+    """Actual recovery rates per failure reason + comparison to scoring.py priors."""
+    if not _P5_AVAILABLE:
+        return _p5_unavailable()
+    conn = db.get_connection()
+    try:
+        result = intelligence_module.by_failure_reason(conn)
+    finally:
+        conn.close()
+    return jsonify(result)
+
+
+@app.route("/api/intelligence/by-strategy")
+def api_intelligence_strategy():
+    """Actual recovery outcomes per strategy selected by the agent."""
+    if not _P5_AVAILABLE:
+        return _p5_unavailable()
+    conn = db.get_connection()
+    try:
+        result = intelligence_module.by_strategy_outcome(conn)
+    finally:
+        conn.close()
+    return jsonify(result)
+
+
+@app.route("/api/intelligence/incremental-revenue")
+def api_intelligence_incremental():
+    """Counterfactual revenue analysis: actual vs naive baseline vs dumb persistence.
+    Baseline values are simulation estimates — clearly labelled in response.
+    """
+    if not _P5_AVAILABLE:
+        return _p5_unavailable()
+    conn = db.get_connection()
+    try:
+        result = intelligence_module.incremental_revenue(conn)
+    finally:
+        conn.close()
+    return jsonify(result)
+
+
+@app.route("/api/intelligence/merchant-learning")
+def api_intelligence_merchant():
+    """Per-merchant-category best strategy from actual historical outcomes.
+    Only surfaces recommendations for merchants with sufficient sample size.
+    """
+    if not _P5_AVAILABLE:
+        return _p5_unavailable()
+    conn = db.get_connection()
+    try:
+        result = intelligence_module.merchant_learning(conn)
+    finally:
+        conn.close()
+    return jsonify(result)
+
+
+@app.route("/api/risk/summary")
+def api_risk_summary():
+    """Revenue-at-risk prediction: top N at-risk cases with risk scores + factors.
+
+    Query params:
+        limit (int, default 10) — number of top-risk cases to return
+        include_recovered (bool, default false) — include already-recovered cases
+    """
+    if not _P5_AVAILABLE:
+        return _p5_unavailable()
+    try:
+        limit = int(request.args.get("limit", 10))
+    except (TypeError, ValueError):
+        limit = 10
+    limit = max(1, min(limit, 100))
+    include_recovered = request.args.get("include_recovered", "false").lower() == "true"
+
+    conn = db.get_connection()
+    try:
+        if include_recovered or limit > 10:
+            full = risk_engine_module.revenue_at_risk(conn, include_recovered=include_recovered)
+            full["cases"] = full["cases"][:limit]
+            result = full
+        else:
+            result = risk_engine_module.top_risks(conn, limit=limit)
+    finally:
+        conn.close()
+    return jsonify(result)
+
+
+@app.route("/api/risk/case/<customer_id>")
+def api_risk_case(customer_id):
+    """Risk score + contributing factors for a single case."""
+    if not _P5_AVAILABLE:
+        return _p5_unavailable()
+    conn = db.get_connection()
+    try:
+        case = db.get_case(conn, customer_id)
+        if case is None:
+            return jsonify({"error": "case not found"}), 404
+        result = risk_engine_module.score_case_risk(case)
+    finally:
+        conn.close()
+    return jsonify(result)
+
+
+@app.route("/api/adaptive-policy/recommend/<customer_id>")
+def api_adaptive_policy_recommend(customer_id):
+    """Data-driven strategy recommendation for a single case with explanation."""
+    if not _P5_AVAILABLE:
+        return _p5_unavailable()
+    conn = db.get_connection()
+    try:
+        case = db.get_case(conn, customer_id)
+        if case is None:
+            return jsonify({"error": "case not found"}), 404
+        result = adaptive_policy_module.recommend_strategy(case, conn)
+    finally:
+        conn.close()
+    return jsonify(result)
+
+
+@app.route("/api/adaptive-policy/summary")
+def api_adaptive_policy_summary():
+    """Current adaptive policy state: observed strategy performance + governance config."""
+    if not _P5_AVAILABLE:
+        return _p5_unavailable()
+    conn = db.get_connection()
+    try:
+        result = adaptive_policy_module.policy_summary(conn)
+    finally:
+        conn.close()
+    return jsonify(result)
+
+
+@app.route("/api/economic-value/portfolio")
+def api_ev_portfolio():
+    """Portfolio expected value: total E[net recovery] across all active cases."""
+    if not _P5_AVAILABLE:
+        return _p5_unavailable()
+    conn = db.get_connection()
+    try:
+        result = economic_value_module.portfolio_ev(conn)
+    finally:
+        conn.close()
+    return jsonify(result)
+
+
+@app.route("/api/economic-value/case/<customer_id>")
+def api_ev_case(customer_id):
+    """Expected net value + incremental value vs baseline for a single case."""
+    if not _P5_AVAILABLE:
+        return _p5_unavailable()
+    conn = db.get_connection()
+    try:
+        case = db.get_case(conn, customer_id)
+        if case is None:
+            return jsonify({"error": "case not found"}), 404
+        from adaptive_policy import _rule_based_strategy
+        strategy = _rule_based_strategy(case)
+        ev = economic_value_module.expected_value(case, strategy)
+        incremental = economic_value_module.incremental_value(case)
+    finally:
+        conn.close()
+    return jsonify({
+        "customer_id": customer_id,
+        "expected_value": ev,
+        "incremental_value": incremental,
+    })
+
+
+@app.route("/api/anomalies")
+def api_anomalies():
+    """Run anomaly detection on current data and return all active alerts.
+
+    Returns alerts sorted by severity (critical first). Each alert includes
+    observed value, expected baseline, affected segment, and recommended action.
+    All values derived from real stored data — no hardcoded thresholds.
+    """
+    if not _P5_AVAILABLE:
+        return _p5_unavailable()
+    conn = db.get_connection()
+    try:
+        result = anomaly_detector_module.run_anomaly_detection(conn)
+    finally:
+        conn.close()
+    return jsonify(result)
+
+
+@app.route("/api/investigate", methods=["POST"])
+def api_investigate():
+    """Revenue Investigator — upgraded Ask the Data with intelligence context.
+
+    Answers analytical questions using real stored data + intelligence aggregates.
+    The response includes:
+      - answer: direct answer from real data
+      - evidence: supporting metrics from real aggregations
+      - segment: most affected segment
+      - recommendation: actionable next step
+
+    Questions answered deterministically (no LLM needed for well-formed queries):
+      - "why did recovery fall" / "recovery performance"
+      - "which failure type" / "most lost revenue"
+      - "which strategy performs best"
+      - "what revenue is at risk"
+      - "anomalies" / "what is failing"
+
+    Falls back to the existing LLM-backed /api/ask behaviour for freeform queries.
+
+    Body: { "question": "..." }
+    """
+    if not _P5_AVAILABLE:
+        return _p5_unavailable()
+
+    payload = request.get_json(silent=True) or {}
+    question = (payload.get("question") or "").strip().lower()
+    if not question:
+        return jsonify({"ok": False, "reason": "empty",
+                        "message": "Provide a question."}), 400
+
+    conn = db.get_connection()
+    try:
+        answer = _investigate_question(question, conn)
+    finally:
+        conn.close()
+
+    return jsonify(answer)
+
+
+def _investigate_question(question: str, conn) -> dict:
+    """Route analytical questions to the appropriate intelligence function.
+
+    Returns a structured answer dict. Always uses real stored data.
+    """
+    q = question.lower()
+
+    # --- Strategy performance (checked BEFORE recovery to avoid "recovery strategy" ambiguity) ---
+    if any(k in q for k in ("strategy", "best strategy", "which strategy", "performs best")):
+        strat_data = intelligence_module.by_strategy_outcome(conn)
+        strategies = [s for s in strat_data["by_strategy"] if s["sufficient_sample"]]
+        best = max(strategies, key=lambda s: s["recovery_rate"]) if strategies else None
+        return {
+            "ok": True,
+            "question_type": "strategy_performance",
+            "answer": (
+                f"Best-performing strategy: '{best['strategy']}' "
+                f"({best['recovery_rate']*100:.1f}% recovery on {best['total']} cases, "
+                f"Rs {best['amount_recovered']:,.0f} recovered)."
+                if best else "Insufficient data for strategy comparison yet."
+            ),
+            "evidence": {"by_strategy": strat_data["by_strategy"]},
+            "segment": best["strategy"] if best else "unknown",
+            "recommendation": (
+                f"Prioritise '{best['strategy']}' for applicable cases."
+                if best else "Run the agent to gather strategy outcome data."
+            ),
+            "data_type": "actual",
+        }
+
+    # --- Recovery performance / why did recovery fall ---
+    if any(k in q for k in ("recovery", "recover", "performance", "why did")):
+        intel = intelligence_module.by_failure_reason(conn)
+        by_reason = intel["by_failure_reason"]
+        worst = min(by_reason, key=lambda r: r["recovery_rate"]) if by_reason else None
+        incremental = intelligence_module.incremental_revenue(conn)
+        return {
+            "ok": True,
+            "question_type": "recovery_performance",
+            "answer": (
+                f"Overall recovery rate: "
+                f"{incremental['actual']['recovery_rate']*100:.1f}%. "
+                + (
+                    f"Lowest recovery by failure reason: '{worst['segment']}' "
+                    f"at {worst['recovery_rate']*100:.1f}% ({worst['total']} cases, "
+                    f"Rs {worst['amount_lost']:,.0f} lost)."
+                    if worst else ""
+                )
+            ),
+            "evidence": {
+                "actual": incremental["actual"],
+                "by_failure_reason": by_reason,
+                "incremental_vs_naive": incremental["incremental"],
+            },
+            "segment": worst["segment"] if worst else "all",
+            "recommendation": (
+                f"Focus on '{worst['segment']}' cases — "
+                f"highest unrecovered amount (Rs {worst['amount_lost']:,.0f})."
+                if worst else "Review overall escalation rate."
+            ),
+            "data_type": "actual",
+        }
+
+    # --- Failure type / most lost revenue ---
+    if any(k in q for k in ("failure", "lost revenue", "which type", "fail")):
+        intel = intelligence_module.by_failure_reason(conn)
+        by_reason = sorted(intel["by_failure_reason"],
+                           key=lambda r: r["amount_lost"], reverse=True)
+        top = by_reason[0] if by_reason else None
+        return {
+            "ok": True,
+            "question_type": "failure_analysis",
+            "answer": (
+                f"The failure type causing the most lost revenue is "
+                f"'{top['segment']}' with Rs {top['amount_lost']:,.0f} unrecovered "
+                f"across {top['total']} cases ({(1-top['recovery_rate'])*100:.1f}% failure rate)."
+                if top else "No failure data available yet."
+            ),
+            "evidence": {"by_failure_reason": by_reason},
+            "segment": top["segment"] if top else "unknown",
+            "recommendation": (
+                f"Review strategy for '{top['segment']}' cases. "
+                f"Current recovery rate: {top['recovery_rate']*100:.1f}%."
+                if top else ""
+            ),
+            "data_type": "actual",
+        }
+
+    # --- Revenue at risk ---
+    if any(k in q for k in ("at risk", "risk", "revenue at risk", "how much")):
+        risk = risk_engine_module.top_risks(conn, limit=5)
+        return {
+            "ok": True,
+            "question_type": "revenue_at_risk",
+            "answer": (
+                f"Rs {risk['total_amount_at_risk']:,.0f} is currently at risk "
+                f"across {risk['active_cases']} active cases. "
+                f"Estimated unrecovered: Rs {risk['expected_unrecovered']:,.0f} "
+                f"[ESTIMATE — risk-score weighted]."
+            ),
+            "evidence": {
+                "total_amount_at_risk": risk["total_amount_at_risk"],
+                "expected_unrecovered": risk["expected_unrecovered"],
+                "active_cases": risk["active_cases"],
+                "top_risks": risk["top_risks"],
+                "summary_by_severity": risk["summary_by_severity"],
+            },
+            "segment": "all active cases",
+            "recommendation": (
+                "Focus recovery efforts on critical-severity cases first "
+                "(mandate_revoked and high-value over-limit cases)."
+            ),
+            "data_type": "mixed",
+        }
+
+    # --- Anomalies / what is failing ---
+    if any(k in q for k in ("anomal", "unusual", "failing", "degrading", "spike", "alert")):
+        anomalies = anomaly_detector_module.run_anomaly_detection(conn)
+        critical = [a for a in anomalies["alerts"] if a["severity"] == "critical"]
+        warnings = [a for a in anomalies["alerts"] if a["severity"] == "warning"]
+        top_alert = anomalies["alerts"][0] if anomalies["alerts"] else None
+        return {
+            "ok": True,
+            "question_type": "anomaly_report",
+            "answer": (
+                f"{anomalies['total']} alert(s) detected: "
+                f"{len(critical)} critical, {len(warnings)} warnings. "
+                + (f"Top alert: {top_alert['title']} — {top_alert['description']}"
+                   if top_alert else "No anomalies detected.")
+            ),
+            "evidence": {"alerts": anomalies["alerts"]},
+            "segment": top_alert["affected_segment"] if top_alert else "none",
+            "recommendation": (
+                top_alert["recommended_action"]
+                if top_alert else "No action needed."
+            ),
+            "data_type": "actual",
+        }
+
+    # --- What should we change / recommendations ---
+    if any(k in q for k in ("recommend", "what should", "change", "improve", "action")):
+        policy = adaptive_policy_module.policy_summary(conn)
+        merchant = intelligence_module.merchant_learning(conn)
+        changes = policy.get("recommended_changes", [])
+        return {
+            "ok": True,
+            "question_type": "recommendations",
+            "answer": (
+                f"{len(changes)} strategy recommendation(s) based on observed outcomes. "
+                + (changes[0]["recommendation"] if changes else
+                   "No strategy changes recommended — current performance within expected range.")
+            ),
+            "evidence": {
+                "recommended_changes": changes,
+                "merchant_learning": merchant["merchants"],
+            },
+            "segment": changes[0]["strategy"] if changes else "all",
+            "recommendation": changes[0]["recommendation"] if changes else "Maintain current policy.",
+            "data_type": "actual",
+        }
+
+    # --- Fallback: route to the existing LLM-backed ask endpoint ---
+    import query as query_module
+    # Build a minimal spec from keywords in the question
+    spec = {}
+    for reason in ("insufficient_funds", "mandate_expired", "mandate_revoked", "bank_technical_error"):
+        if reason.replace("_", " ") in question or reason in question:
+            spec["failure_reason"] = reason
+            break
+    for cat in ("subscription", "emi", "insurance", "utility"):
+        if cat in question:
+            spec["merchant_category"] = cat
+            break
+
+    if spec:
+        rows, applied = query_module.run_query(spec, limit=20)
+        return {
+            "ok": True,
+            "question_type": "filtered_cases",
+            "answer": f"{len(rows)} cases match your query.",
+            "evidence": {"filter": applied, "count": len(rows)},
+            "results": [_case_summary_from_row(r) for r in rows[:10]],
+            "segment": str(spec),
+            "recommendation": "Review the matching cases in the Cases view.",
+            "data_type": "actual",
+        }
+
+    return {
+        "ok": False,
+        "question_type": "unknown",
+        "answer": (
+            "I couldn't interpret that question. Try asking about: "
+            "'recovery performance', 'revenue at risk', 'which strategy performs best', "
+            "'anomalies', or 'what should we change'."
+        ),
+        "data_type": "n/a",
+    }
 
 
 if __name__ == "__main__":

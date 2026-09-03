@@ -2707,3 +2707,279 @@ body { font-size: 13px; line-height: 1.6; }
   .content { margin: 0; padding: 0; }
   .card { box-shadow: none; border: 1px solid #ccc; page-break-inside: avoid; }
 }
+
+
+/* ============================================================
+   PHASE 4 — Execution Panel (Case Drawer + Overview Card)
+   ============================================================ */
+
+/* Execution mode badges */
+.badge-exec-real {
+  background: linear-gradient(90deg, var(--blue-500), #6366f1);
+  color: #fff;
+  border: none;
+  font-size: var(--text-xs);
+  font-weight: 700;
+}
+.badge-exec-sim {
+  background: var(--status-neutral-bg);
+  color: var(--text-tertiary);
+  border: 1px solid var(--status-neutral-border);
+  font-size: var(--text-xs);
+}
+
+/* Execution job cards inside the drawer */
+.exec-panel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+  margin-bottom: var(--sp-4);
+}
+
+.exec-job-card {
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-lg);
+  padding: var(--sp-3) var(--sp-4);
+  background: var(--bg-subtle);
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+}
+
+.exec-job-header {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  flex-wrap: wrap;
+}
+
+.exec-attempt-label {
+  font-size: var(--text-sm);
+  font-weight: 700;
+  color: var(--text-primary);
+  margin-right: var(--sp-1);
+}
+
+.exec-timing {
+  display: flex;
+  gap: var(--sp-4);
+  flex-wrap: wrap;
+}
+
+.exec-timing-item {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  color: var(--text-tertiary);
+}
+
+.exec-outcome {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+}
+
+.exec-outcome-ok     { color: var(--status-success-text); font-weight: 600; font-size: var(--text-sm); }
+.exec-outcome-bad    { color: var(--status-error-text);   font-weight: 600; font-size: var(--text-sm); }
+.exec-outcome-neutral { color: var(--text-secondary);     font-weight: 500; font-size: var(--text-sm); }
+
+.exec-id-row {
+  display: flex;
+  align-items: baseline;
+  gap: var(--sp-2);
+  flex-wrap: wrap;
+}
+
+.exec-id-label {
+  font-size: var(--text-xs);
+  color: var(--text-tertiary);
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.exec-id-value {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  background: var(--gray-100);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-sm);
+  padding: 1px 6px;
+  color: var(--text-primary);
+  word-break: break-all;
+}
+
+.exec-link-url {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--blue-500);
+  word-break: break-all;
+  text-decoration: underline;
+}
+
+.exec-failure-reason {
+  font-size: var(--text-xs);
+  color: var(--text-tertiary);
+  line-height: 1.5;
+  margin-top: var(--sp-1);
+  padding-top: var(--sp-1);
+  border-top: 1px dashed var(--border-default);
+}
+
+/* Execution status card (Overview) */
+.exec-summary-row {
+  display: flex;
+  gap: var(--sp-5);
+  flex-wrap: wrap;
+  padding: var(--sp-2) 0 var(--sp-3);
+}
+
+.exec-stat-item {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.exec-stat-value {
+  font-family: var(--font-mono);
+  font-size: 22px;
+  font-weight: 700;
+  color: var(--text-primary);
+  line-height: 1.1;
+}
+
+.exec-stat-label {
+  font-size: var(--text-xs);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-tertiary);
+  font-weight: 600;
+}
+
+.exec-limitation-note {
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+  background: var(--status-warning-bg);
+  border: 1px solid var(--status-warning-border);
+  border-radius: var(--radius-lg);
+  padding: var(--sp-3) var(--sp-4);
+  line-height: 1.6;
+  margin-top: var(--sp-2);
+}
+
+.exec-limitation-note strong { color: var(--text-primary); }
+.exec-limitation-note code {
+  font-size: 11px;
+  background: rgba(0,0,0,0.06);
+  border: none;
+  padding: 1px 5px;
+}
+
+/* Dark mode variants */
+:root[data-theme="dark"] .exec-job-card   { background: var(--bg-subtle); }
+:root[data-theme="dark"] .exec-id-value   { background: var(--gray-50); }
+:root[data-theme="dark"] .exec-limitation-note { background: var(--status-warning-bg); }
+:root[data-theme="dark"] .exec-limitation-note code { background: rgba(255,255,255,0.08); }
+
+
+/* ============================================================
+   PHASE 5 — Analytics, Risk, Anomaly, Investigator components
+   ============================================================ */
+
+/* Anomaly alerts */
+.anomaly-list { display: flex; flex-direction: column; gap: var(--sp-3); }
+.anomaly-row {
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-lg);
+  padding: var(--sp-3) var(--sp-4);
+  border-left-width: 3px;
+}
+.anomaly-row.anomaly-critical { border-left-color: var(--status-error-text); background: var(--status-error-bg); }
+.anomaly-row.anomaly-warning  { border-left-color: var(--status-warning-text); background: var(--status-warning-bg); }
+.anomaly-row.anomaly-info     { border-left-color: var(--status-info-text); }
+.anomaly-row-head { display: flex; align-items: center; gap: var(--sp-2); margin-bottom: var(--sp-1); flex-wrap: wrap; }
+.anomaly-title { font-size: var(--text-sm); font-weight: 700; color: var(--text-primary); }
+.anomaly-desc  { font-size: var(--text-sm); color: var(--text-secondary); margin: 2px 0; line-height: 1.5; }
+.anomaly-action { font-size: var(--text-xs); color: var(--text-secondary); margin: 4px 0 0; line-height: 1.5; }
+.anomaly-action strong { color: var(--text-primary); }
+
+/* Risk severity row */
+.risk-severity-row { display: flex; gap: var(--sp-4); flex-wrap: wrap; margin: var(--sp-3) 0; }
+.risk-sev-item { display: flex; align-items: center; gap: var(--sp-2); }
+.risk-sev-count { font-family: var(--font-mono); font-weight: 700; font-size: var(--text-lg); }
+.risk-sev-amt   { font-size: var(--text-xs); }
+
+/* Incremental revenue grid */
+.incremental-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: var(--sp-4);
+  margin-bottom: var(--sp-4);
+}
+@media (max-width: 900px) { .incremental-grid { grid-template-columns: 1fr; } }
+
+.incremental-card {
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-xl);
+  padding: var(--sp-4);
+  background: var(--bg-subtle);
+}
+.incremental-card:first-child { border-color: var(--status-success-border); background: var(--status-success-bg); }
+.incremental-label { font-size: var(--text-xs); font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; color: var(--text-tertiary); margin-bottom: var(--sp-2); }
+.incremental-amount { font-family: var(--font-mono); font-size: 22px; font-weight: 700; color: var(--text-primary); letter-spacing: -0.02em; margin-bottom: var(--sp-1); }
+
+.incremental-summary {
+  background: var(--blue-50);
+  border: 1px solid var(--blue-100);
+  border-radius: var(--radius-lg);
+  padding: var(--sp-3) var(--sp-4);
+  font-size: var(--text-sm);
+  color: var(--text-primary);
+}
+
+/* Merchant learning grid */
+.merchant-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: var(--sp-4);
+}
+.merchant-card {
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-xl);
+  padding: var(--sp-4);
+  background: var(--bg-subtle);
+}
+
+/* Analytics table wrap */
+.analytics-table-wrap { overflow-x: auto; }
+
+/* Investigate result */
+.investigate-result {
+  margin-top: var(--sp-5);
+  border-top: 1px solid var(--border-default);
+  padding-top: var(--sp-4);
+}
+.investigate-answer {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+  margin-bottom: var(--sp-3);
+}
+.investigate-recommendation {
+  background: var(--blue-50);
+  border: 1px solid var(--blue-100);
+  border-radius: var(--radius-lg);
+  padding: var(--sp-3) var(--sp-4);
+  font-size: var(--text-sm);
+  color: var(--text-primary);
+  margin-bottom: var(--sp-3);
+}
+.investigate-recommendation strong { color: var(--text-primary); }
+.investigate-evidence { margin-top: var(--sp-3); }
+
+/* Dark mode overrides */
+:root[data-theme="dark"] .incremental-card { background: var(--bg-subtle); }
+:root[data-theme="dark"] .incremental-card:first-child { background: var(--status-success-bg); }
+:root[data-theme="dark"] .incremental-summary { background: var(--blue-50); }
+:root[data-theme="dark"] .merchant-card { background: var(--bg-subtle); }
+:root[data-theme="dark"] .investigate-recommendation { background: var(--blue-50); }
+:root[data-theme="dark"] .anomaly-row.anomaly-critical { background: var(--status-error-bg); }
+:root[data-theme="dark"] .anomaly-row.anomaly-warning  { background: var(--status-warning-bg); }

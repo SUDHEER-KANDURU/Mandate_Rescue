@@ -142,6 +142,17 @@
               <span class="nav-label">Reports</span>
             </button>
           </li>
+          <li>
+            <button class="nav-item" data-view="analytics">
+              <span class="nav-ico" aria-hidden="true">
+                <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+                  <path d="M2 12l3.5-4 3 2.5L12 5l2 3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+                  <path d="M2 14h12" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/>
+                </svg>
+              </span>
+              <span class="nav-label">Analytics</span>
+            </button>
+          </li>
         </ul>
       </div>
 
@@ -462,6 +473,21 @@
               <span class="lr-value num" id="lr-rejected">0</span>
             </div>
           </div>
+        </section>
+
+        <!-- ── Phase 4: Recovery execution status ── -->
+        <section class="card hidden" id="execution-status-card" aria-label="Recovery execution status">
+          <!-- Populated by renderExecutionStatusCard() after dashboard loads -->
+        </section>
+
+        <!-- ── Phase 5: Anomaly alerts (shown only when alerts exist) ── -->
+        <section class="card hidden" id="anomaly-alerts-card" aria-label="Anomaly alerts" aria-live="polite">
+          <!-- Populated by loadAnomalyAlerts() after dashboard loads -->
+        </section>
+
+        <!-- ── Phase 5: Revenue at risk ── -->
+        <section class="card hidden" id="risk-summary-card" aria-label="Revenue at risk">
+          <!-- Populated by loadRiskSummary() after dashboard loads -->
         </section>
 
         <!-- ── Chart + Cohort ── -->
@@ -943,6 +969,95 @@
           </div>
         </section>
       </section>
+
+
+      <!-- ================================================================
+           VIEW: ANALYTICS  (Phase 5)
+           ================================================================ -->
+      <section class="view" id="view-analytics" data-view="analytics" aria-label="Analytics">
+
+        <div class="page-header">
+          <div>
+            <h1 class="page-title">Analytics</h1>
+            <p class="page-subtitle">Revenue intelligence derived from actual recovery outcomes. No hardcoded values.</p>
+          </div>
+        </div>
+
+        <!-- ── Revenue Investigator ── -->
+        <section class="card" id="investigator-card">
+          <div class="card-head">
+            <div>
+              <h2 class="card-title">Revenue Investigator</h2>
+              <p class="card-sub">Ask questions about your recovery data. Answers come from real stored outcomes.</p>
+            </div>
+          </div>
+          <div class="ask-input-row">
+            <label for="investigate-input" class="hidden">Ask a revenue question</label>
+            <input id="investigate-input" class="ask-input" type="text"
+                   placeholder="e.g. Why did recovery fall? Which strategy performs best? What revenue is at risk?"
+                   autocomplete="off" aria-label="Revenue investigation question">
+            <button id="investigate-btn" class="btn btn-primary">Investigate</button>
+          </div>
+          <div class="ask-chips" id="investigate-chips">
+            <button class="chip" data-q="Why did recovery fall?">Recovery performance</button>
+            <button class="chip" data-q="Which failure type is causing the most lost revenue?">Most lost revenue</button>
+            <button class="chip" data-q="Which recovery strategy performs best?">Best strategy</button>
+            <button class="chip" data-q="What revenue is currently at risk?">Revenue at risk</button>
+            <button class="chip" data-q="What anomalies are detected?">Anomalies</button>
+            <button class="chip" data-q="What should we change?">Recommendations</button>
+          </div>
+          <div id="investigate-result" class="investigate-result hidden" role="region" aria-live="polite"></div>
+        </section>
+
+        <!-- ── By Failure Reason ── -->
+        <section class="card">
+          <div class="card-head">
+            <h2 class="card-title">Recovery by failure reason</h2>
+            <span class="badge badge-info">Actual</span>
+          </div>
+          <p class="card-sub">Actual recovery rates per failure reason vs the model's prior estimate. All values from real case outcomes.</p>
+          <div id="by-failure-reason-body" class="analytics-table-wrap">
+            <div class="view-empty muted">Run the agent to populate analytics.</div>
+          </div>
+        </section>
+
+        <!-- ── Strategy Outcomes ── -->
+        <section class="card">
+          <div class="card-head">
+            <h2 class="card-title">Strategy performance</h2>
+            <span class="badge badge-info">Actual</span>
+          </div>
+          <p class="card-sub">Which strategies the agent selected and how each performed — from actual audit_log outcomes.</p>
+          <div id="by-strategy-body" class="analytics-table-wrap">
+            <div class="view-empty muted">Run the agent to populate analytics.</div>
+          </div>
+        </section>
+
+        <!-- ── Incremental Revenue ── -->
+        <section class="card">
+          <div class="card-head">
+            <h2 class="card-title">Incremental revenue</h2>
+            <span class="badge badge-warning">Estimate</span>
+          </div>
+          <p class="card-sub">Counterfactual: actual agent vs naive baseline vs dumb persistence. Baseline values are simulation estimates — clearly labelled.</p>
+          <div id="incremental-revenue-body">
+            <div class="view-empty muted">Run the agent to populate analytics.</div>
+          </div>
+        </section>
+
+        <!-- ── Merchant Learning ── -->
+        <section class="card">
+          <div class="card-head">
+            <h2 class="card-title">Merchant-specific learning</h2>
+            <span class="badge badge-info">Actual</span>
+          </div>
+          <p class="card-sub">Best-performing strategy per merchant category — only shown when there is sufficient data.</p>
+          <div id="merchant-learning-body">
+            <div class="view-empty muted">Run the agent to populate analytics.</div>
+          </div>
+        </section>
+
+      </section><!-- /#view-analytics -->
 
     </div><!-- /#dashboard -->
 

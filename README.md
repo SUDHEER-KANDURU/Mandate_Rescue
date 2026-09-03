@@ -2,25 +2,27 @@
 
 [![CI](https://github.com/OWNER/Mandate_Rescue/actions/workflows/ci.yml/badge.svg)](https://github.com/OWNER/Mandate_Rescue/actions/workflows/ci.yml)
 
-> **An event-driven payment recovery platform** that detects failed recurring payments, diagnoses the failure, decides the optimal recovery strategy, executes recovery actions, tracks outcomes, and provides merchants with explainable recovery intelligence.
+> **An adaptive revenue protection engine** for UPI Autopay and NACH e-mandate failures.  
+> Detects, diagnoses, triages, recovers, audits, and predicts — with full Razorpay Test Mode integration and explainable intelligence at every step.
 
 ---
 
-## Problem
+## What it does
 
-In India, recurring payments via UPI Autopay and NACH e-mandates fail at significant rates due to insufficient funds, expired mandates, revoked authorisations, and bank-side technical errors. Every failure silently erodes subscription revenue. Most platforms retry blindly — the same attempt at the same time, for every failure, regardless of customer history or failure type. That wastes retries, irritates customers, and misses recoverable revenue.
+When a recurring payment fails, Mandate Rescue:
 
-## Solution
-
-Mandate Rescue replaces the "retry everyone the same way" approach with an intelligent, explainable recovery pipeline:
-
-- **Classify** each failure into a specific reason (insufficient funds, mandate expired, revoked, bank error)
-- **Score** each case on recoverability using customer history and failure type
-- **Triage** highest-value cases first
-- **Choose** the optimal strategy per case: salary-window retry, re-authorisation link, dunning escalation, or immediate escalation (for revoked mandates)
-- **Generate** customer-facing nudges (Standard + Hinglish) for the right channel at the right stage
-- **Track** every decision in an append-only audit trail, re-verified by an independent correctness audit
-- **Explain** every recovery decision with scores, factors, and reasoning
+1. **Receives** the Razorpay webhook (real HMAC-verified) or synthetic seed
+2. **Diagnoses** the failure reason (insufficient funds, expired, revoked, bank error)
+3. **Scores** each case 0–100 on recoverability using customer history
+4. **Triages** highest-value cases first
+5. **Selects** the optimal strategy per case and per merchant category (data-driven)
+6. **Schedules** retry jobs with RBI-compliant 24h pre-debit notifications
+7. **Executes** via Razorpay Test Mode (payment links, subscription checks) or simulation
+8. **Tracks** every decision in an append-only audit trail with full state machine enforcement
+9. **Predicts** at-risk revenue before failures occur, with contributing factors
+10. **Detects** anomalies: failure spikes, escalation surges, compliance degradation
+11. **Answers** analytical questions: "Why did recovery fall?", "Which strategy performs best?"
+12. **Calculates** expected net value of each intervention and incremental revenue over baselines
 
 ---
 
@@ -32,217 +34,64 @@ Razorpay Webhook (real / test-mode)   OR   Synthetic 180-case seed
           ▼                                          ▼
  ┌─────────────────────────────────────────────────────────────┐
  │                    Webhook Gateway                          │
- │  • Signature verification (HMAC-SHA256, constant-time)      │
- │  • Idempotency check (webhook_events table, UNIQUE)         │
- │  • Payload validation (amount > 0, finite, ≤ Rs 1 crore)   │
- │  • Event persistence → mandate_failures + audit_log         │
+ │  • HMAC-SHA256 signature (raw body bytes, constant-time)    │
+ │  • Idempotency (webhook_events.razorpay_event_id UNIQUE)    │
+ │  • Amount validation (> 0, finite, ≤ Rs 1 crore)           │
+ │  • Event persistence → mandate_failures                     │
  └──────────────────────────┬──────────────────────────────────┘
                             │
                             ▼
  ┌─────────────────────────────────────────────────────────────┐
  │                 Recovery Orchestrator                       │
  │                                                             │
- │  DiagnosisAgent  →  TriageAgent  →  StrategyAgent           │
- │       │                │                  │                 │
- │  Classify failure   Score (0-100)    Per-reason strategy    │
- │  Map event type     Health score     Retry cap gate         │
- │  Verify signature   Triage order     Mandate-limit gate     │
- │                                      RBI pre-debit rule     │
- │                                      Dunning sequence       │
+ │  DiagnosisAgent → TriageAgent → StrategyAgent               │
+ │       │               │               │                     │
+ │  Classify + verify  Score (0-100)   Per-reason strategy     │
+ │  failure reason     Health score    Retry cap / RBI gate    │
+ │                     Triage order    Dunning sequence        │
  │                                           │                 │
  │                                    CommunicationAgent       │
- │                                    LLM narration / msgs     │
+ │                                    LLM narration (optional) │
  └──────────────────────────┬──────────────────────────────────┘
                             │
-               ┌────────────┼────────────┐
-               ▼            ▼            ▼
-          Recovered     Escalated    Rejected
-          (audit log)  (audit log)  (signature fail)
-               │
-               ▼
+           ┌────────────────┼───────────────┐
+           ▼                ▼               ▼
+     Recovered          Escalated       Rejected
+           │
+           ▼
  ┌─────────────────────────────────────────────────────────────┐
- │  Analytics / Audit / Dashboard                              │
- │  • Recovery funnel, KPIs, cohort breakdown                  │
- │  • Agent vs two baselines (naive + dumb persistence)        │
- │  • Correctness audit (7 re-derived business rules)          │
- │  • ML validation layer (scikit-learn + SHAP)                │
- │  • Case Replay, Webhook Inspector, Policy Sandbox           │
- │  • "Ask the data" (NL → parameterized SQL)                  │
+ │  Phase 4: Real Execution Layer                              │
+ │  PaymentExecutionService (REAL_TEST | SIMULATION)           │
+ │  → Razorpay Test API: capture payment / create payment link │
+ │  → Durable recovery_jobs table (idempotency_key UNIQUE)     │
+ │  → Scheduler worker (BEGIN IMMEDIATE claim)                 │
+ └──────────────────────────┬──────────────────────────────────┘
+                            │
+                            ▼
+ ┌─────────────────────────────────────────────────────────────┐
+ │  Phase 5: Adaptive Revenue Intelligence                     │
+ │  • Revenue-at-risk prediction (risk_engine)                 │
+ │  • Data-driven strategy selection (adaptive_policy)         │
+ │  • Expected net value calculation (economic_value)          │
+ │  • Anomaly detection (6 detectors, statistical)             │
+ │  • Revenue Investigator (analytical Q&A from real data)     │
+ │  • Performance: batch ML inference, JOIN queries, indexes   │
  └─────────────────────────────────────────────────────────────┘
 ```
 
-### Event flow
-
-```
-12:01:03  Webhook received (POST /api/webhooks/razorpay or synthetic seed)
-12:01:03  Signature verified (HMAC-SHA256 over raw body, constant-time)
-12:01:03  Idempotency checked (webhook_events.razorpay_event_id UNIQUE)
-12:01:03  Event persisted (mandate_failures + webhook_events)
-12:01:04  DiagnosisAgent: failure_reason + raw_event_type classified
-12:01:04  TriageAgent: recoverability score computed, triage order set
-12:01:04  StrategyAgent: retry scheduled (salary-window day 1-3), pre-debit notification logged
-16:30:00  StrategyAgent: retry executed → recovered
-16:30:01  Outcome persisted (audit_log: case_status = recovered)
-16:30:01  Dashboard KPIs updated (real aggregate from audit rows)
-```
-
 ---
 
-## AI / Agent architecture
+## Phases completed
 
-| Agent | Input | Decision | Output | Fallback |
-|---|---|---|---|---|
-| **DiagnosisAgent** | Raw webhook payload + signature | Classify failure reason, verify signature | `failure_reason`, `raw_event_type`, or reject | Reject → `webhook_rejected` audit row |
-| **TriageAgent** | Case fields, past success rate, tenure, retry count | Weighted 0-100 recoverability score | Score, health band, triage ordering | Score=0, escalate |
-| **StrategyAgent** | Failure reason, score, mandate limit, RBI clock | Select retry strategy, enforce compliance | Retry / dunning / reauth / escalation + audit row per step | Hard cap at 3 retries, escalate |
-| **CommunicationAgent** | Case + triage + decisions | Generate readable reasoning + customer nudge | LLM text or template fallback | Template always available |
-
-**Trust boundary:** The LLM narrates decisions and translates query intent — it never makes a decision, never sees secrets, and never generates SQL directly. The `/api/ask` endpoint enforces a hardcoded field whitelist before any filter reaches the database.
-
----
-
-## Data model
-
-```
-mandate_failures (PRIMARY KEY: customer_id)
-  customer_id, amount, failure_reason, failure_date,
-  past_retry_count, customer_tenure_months, past_payment_success_rate,
-  merchant_category, case_status, raw_event_type,
-  mandate_limit, compliance_status, dunning_stage,
-  health_score, history_success_days, webhook_signature, source
-
-audit_log (append-only, AUTOINCREMENT)
-  event_id, customer_id → mandate_failures,
-  event_timestamp, event_type, action_taken, outcome,
-  attempt_number, reasoning_text, case_status_after
-
-webhook_events (idempotency table)
-  id, razorpay_event_id UNIQUE, payload_hash,
-  received_at, processed, customer_id, event_type, rejected_reason
-
-state_transitions (state machine history, AUTOINCREMENT)
-  id, customer_id → mandate_failures,
-  from_status, to_status, transitioned_at, triggered_by
-```
-
-Key design decisions:
-- `audit_log` is append-only — no UPDATE or per-row DELETE exists anywhere in the code
-- `webhook_events.razorpay_event_id` has a UNIQUE constraint → duplicate delivery is safe at the DB level, not just in application code
-- `state_transitions` records every legal `case_status` change — illegal transitions (e.g. `recovered → in_progress`) are rejected at the application layer with a `ValueError`, not just ignored
-- `LEGAL_TRANSITIONS` map in `db.py` defines the explicit state machine: `new → in_progress → recovered|escalated|promised|broken_promise`; terminal states have no outbound transitions
-- `PRAGMA foreign_keys = ON` — FK from `audit_log` to `mandate_failures` is enforced
-- `busy_timeout = 15000` — brief write contention between SSE stream and concurrent reads is handled safely
-- `invalid` and `duplicate` case statuses are excluded from all money aggregates
-- **Concurrent recovery protection**: `_acquire_processing_lock` issues `BEGIN IMMEDIATE` before the idempotency check, so two concurrent workers cannot both pass "not terminal" and double-process the same case
-
----
-
-## Security
-
-| Area | Implementation |
-|---|---|
-| Synthetic webhook signatures | HMAC-SHA256 over canonical string, `hmac.compare_digest`, fail-closed — no default secret |
-| Real Razorpay webhook signatures | HMAC-SHA256 over **raw request body bytes** (never re-serialized), constant-time compare, fail-closed |
-| Placeholder secret detection | `_INSECURE_PLACEHOLDERS` frozenset — known bad values rejected at startup |
-| API-key gate | `X-API-Key` required on all mutating endpoints; constant-time compare; auto-generated if unset |
-| NL query injection | LLM output filtered against a hardcoded field whitelist; all SQL is parameterized |
-| Input validation | Amount validated: finite, positive, ≤ Rs 1 crore; invalid events logged + excluded from all aggregates |
-| Question length limit | `/api/ask` rejects questions > 500 chars to prevent LLM prompt stuffing |
-| Security headers | CSP, X-Content-Type-Options, X-Frame-Options, Referrer-Policy on every response |
-| Correlation ID | `X-Correlation-ID` injected per-request into all log records and echoed in responses |
-| Request size limit | `MAX_CONTENT_LENGTH = 1 MB` — oversized bodies return 413 JSON |
-| CDN integrity | Chart.js loaded with `integrity="sha384-..."` + `crossorigin="anonymous"` |
-| Sensitive endpoints | `/api/audit-check` and `/api/chaos-test` are API-key gated (compute-heavy) |
-| Webhook rollback | Persistence errors in `/api/webhooks/razorpay` roll back atomically — no partial state |
-
-**Known limitations (appropriate for this scope):** single shared API key, no user accounts, no token rotation, no rate limiting on public read endpoints.
-
----
-
-## Razorpay integration
-
-`POST /api/webhooks/razorpay` is a real Razorpay webhook receiver:
-
-1. **Verification** — `razorpay_adapter.verify_razorpay_signature()` computes HMAC-SHA256 over the **raw request body bytes** and compares it in constant time against `X-Razorpay-Signature`, keyed with `RAZORPAY_WEBHOOK_SECRET` (configured in the Razorpay Dashboard → Settings → Webhooks).
-2. **Idempotency** — `claim_webhook_event()` inserts into `webhook_events` with a UNIQUE constraint on Razorpay's own event `id`. A duplicate delivery returns `{status: "already_processed"}` without re-processing.
-3. **Mapping** — `map_razorpay_event()` extracts `customer_id` from `notes`, falls back to Razorpay's own subscription/payment ID, converts paise to rupees, and creates a case record in the same shape as the synthetic seed.
-4. **Identical pipeline** — the mapped record flows through `DiagnosisAgent → TriageAgent → StrategyAgent → CommunicationAgent` identically to synthetic cases, tagged `source: "razorpay_live"`.
-
-**Supported real Razorpay events:**
-
-| Razorpay event | Internal reason |
-|---|---|
-| `subscription.charged.failed`, `payment.failed` | `insufficient_funds` |
-| `subscription.halted`, `subscription.cancelled` | `mandate_revoked` |
-| `subscription.pending` | `mandate_expired` |
-| `payment.dispute.created` | `bank_technical_error` |
-
-**Test-mode setup:** `razorpay_client.py` creates a test-mode plan + subscription via `RAZORPAY_KEY_ID`/`RAZORPAY_KEY_SECRET`. Use [ngrok](https://ngrok.com) or [smee.io](https://smee.io) to expose `/api/webhooks/razorpay` for local Razorpay test delivery.
-
-**Honest distinction:** This project uses Razorpay **test mode** for webhook intake. No real money changes hands. The 180-case synthetic simulation is what runs for scale and demo purposes. A real Razorpay event arriving via the webhook endpoint is a genuine integration, not a simulation.
-
----
-
-## Recovery metrics — how they're calculated
-
-| Metric | Formula | Source |
+| Phase | Description | Key deliverables |
 |---|---|---|
-| Amount at risk | Sum of `amount` for all cases excluding `invalid` + `duplicate` | `mandate_failures` |
-| Amount recovered | Sum of `amount` where `case_status = recovered` | `mandate_failures` |
-| Recovery rate | `recovered_cases / total_cases` (excl. invalid/duplicate) | `mandate_failures` |
-| Escalation rate | `escalated_cases / total_cases` | `mandate_failures` |
-| Naive baseline | 1 attempt per case, same probability model, RNG seed 42 | `baseline.run_baseline()` |
-| Dumb persistence | Up to 3 attempts per case, no strategy, RNG seed 43 | `baseline.run_dumb_persistence_baseline()` |
+| **1** | Core pipeline | DiagnosisAgent, TriageAgent, StrategyAgent, CommunicationAgent, synthetic 180-case seed, audit trail, state machine |
+| **2** | Hardening | Idempotency, concurrency protection, RBI compliance, correctness audit (7 rules), chaos suite (10 adversarial scenarios) |
+| **3** | Intelligence | ML validation layer (LogisticRegression vs GBM + SHAP), Policy Sandbox (Monte Carlo), baselines, Case Replay, Webhook Inspector |
+| **4** | Real execution | Razorpay Test Mode integration, `payment_executor.py` (REAL_TEST/SIMULATION modes), `scheduler.py` (durable job queue, `BEGIN IMMEDIATE`), `recovery_jobs` table, stale-job restart safety |
+| **5** | Revenue intelligence + performance | `intelligence.py`, `risk_engine.py`, `adaptive_policy.py`, `economic_value.py`, `anomaly_detector.py`, Revenue Investigator (`/api/investigate`), batch ML prediction (6500ms → 13ms), JOIN queries (N+1 fixed), 5 DB indexes added, Analytics view |
 
-**Why two baselines:** The naive baseline answers "did the agent beat doing nothing?". The dumb-persistence baseline answers "did the agent's *strategy* (scoring, timing, dunning) add value beyond just retrying more?". The second is the harder, more defensible claim.
-
-**Simulation label:** All recovery outcomes are stochastic simulations — `rng.random() < recovery_probability` — not real payment API calls. Probability is blended from `BASE_SUCCESS_PROB[failure_reason]` and the 0-100 recoverability score. This is clearly labeled as simulation throughout the UI.
-
----
-
-## Testing
-
-```bash
-pip install -r requirements-dev.txt
-pytest -v                          # full suite (~321 tests, excludes slow)
-pytest -m "not slow" -v            # fast tests only (~317 tests)
-pytest -m slow -v                  # volume tests only (~4 tests)
-pytest --cov=backend --cov-report=term-missing   # with coverage
-```
-
-### Coverage
-
-| Module | Tests | What's covered |
-|---|---|---|
-| `scoring.py` | 21 | Formula, weight normalization, REASON_BASE, boundaries, explain_score |
-| `salary_window.py` | 21 | Both modes, history parsing, modal inference, window clamping |
-| `health.py` | 22 | Score formula, band thresholds, boundaries, health_for_case |
-| `messaging.py` | 23 | All 4 templates × 4 categories, Hinglish, channel validation, masking |
-| `query.py` | 26 | All filter types, whitelist enforcement, computed filters, sort, limit |
-| `metrics.py` | 22 | Core KPIs, invalid/duplicate exclusions, cohorts, exceptions, rejected |
-| `metric_correctness` | 17 | Formula verification, no double-counting, baseline purity, cohort sums |
-| `export.py` | 15 | CSV structure, all sections, real metric values, baseline rows |
-| `simulation_runner.py` | 33 | CI math, t vs normal, paired delta, run shape, compare_policies |
-| `webhook_security.py` | — | HMAC round-trip, missing/wrong/placeholder secrets |
-| `razorpay_adapter.py` | — | Signature round-trip, body tampering, event mapping, fallbacks |
-| `/api/ask` (Flask) | 16 | LLM stub paths, whitelist, injection blocking, error codes |
-| Audit invariants | 9 | All 7 business rules + reproducible counts + run_completed |
-| Idempotency | — | Duplicate webhook, re-run agent, pinned 139/38/3 counts |
-| State machine | 20 | Legal/illegal transitions, DB enforcement, full-run consistency |
-| Concurrency | 5 | Sequential double-process, concurrent pipeline, UNIQUE constraint race |
-| Chaos suite | 10 | Replay, invalid amounts, dup IDs, clock skew, malformed LLM, sig edge, extreme volume, malformed body, restart safety, retry exhaustion |
-| Replay endpoint | 6 | Auth, 404, new case processing, terminal idempotency |
-| Benchmark | 15 | Structure, reproducibility, CI math helpers |
-| Security | — | API key gate, Razorpay webhook route end-to-end |
-| Baselines | — | Shape, side-effects, dumb ≥ naive |
-
-Also verified by standalone CLI tools:
-
-```bash
-python backend/audit_check.py          # 7 business-rule correctness checks
-python backend/chaos_test.py           # 10 adversarial scenarios (isolated in-memory DBs)
-python benchmark.py --n-runs 30        # Reproducible 3-strategy comparison
-```
+**Test count:** 463 passing, 2 skipped (real-API opt-in), 0 failures
 
 ---
 
@@ -266,33 +115,46 @@ Edit `.env`:
 
 ```env
 # Required — fail-closed, no default
-WEBHOOK_SECRET=<generate: python -c "import secrets; print(secrets.token_hex(32))">
+WEBHOOK_SECRET=<python -c "import secrets; print(secrets.token_hex(32))">
 
-# Required for real Razorpay webhook intake (optional if only using synthetic demo)
+# Required for real Razorpay webhook intake
 RAZORPAY_WEBHOOK_SECRET=<from Razorpay Dashboard → Settings → Webhooks>
+
+# Optional — real Razorpay Test Mode execution (payment links, subscription checks)
+RAZORPAY_KEY_ID=rzp_test_...
+RAZORPAY_KEY_SECRET=...
 
 # Optional — LLM narration (falls back to templates without this)
 GROQ_API_KEY=gsk_...
+# Keep LLM_LIVE_TOP_N low (default 5) to stay within Groq free-tier 8K TPM limit
+# LLM_LIVE_TOP_N=5
 
-# Optional — auto-generated and printed to log on startup if omitted
-MANDATE_RESCUE_API_KEY=<generate: python -c "import secrets; print(secrets.token_urlsafe(32))">
+# Optional — auto-generated on startup if omitted
+MANDATE_RESCUE_API_KEY=<python -c "import secrets; print(secrets.token_urlsafe(32))">
 ```
 
-### 3. Run
+### 3. Train the ML model (optional but recommended)
+
+```bash
+python backend/ml/train_model.py
+```
+
+This writes `backend/ml/model.pkl` and `backend/ml/metrics.json`. The app works without it (ML column shows `—`). Takes ~5 seconds on a laptop.
+
+### 4. Run
 
 ```bash
 python backend/app.py
 ```
 
-Open http://127.0.0.1:5000. Click **Reset demo** to seed 180 cases, then **Run agent** to watch the pipeline live.
+Open http://127.0.0.1:5000.
 
-For a persistent key (useful for scripting):
-
-```bash
-# PowerShell
-$env:MANDATE_RESCUE_API_KEY = "my-fixed-key"
-python backend/app.py
-```
+**Quick start:**
+1. Click **Reset demo** — seeds 180 synthetic cases
+2. Click **Run agent** — processes all cases through the 4-agent pipeline
+3. Explore **Overview** — KPIs, recovery funnel, anomaly alerts, at-risk revenue
+4. Visit **Analytics** — by-failure-reason breakdown, strategy performance, investigator
+5. Click any case row — see the full audit timeline + execution panel
 
 ---
 
@@ -300,110 +162,383 @@ python backend/app.py
 
 ```bash
 cp .env.example .env   # fill in WEBHOOK_SECRET at minimum
-touch mandate_rescue.db    # create DB file (not directory) before bind-mount
+touch mandate_rescue.db
 docker compose up --build
 ```
 
-Opens on http://127.0.0.1:5000. The SQLite database is bind-mounted to the host (`./mandate_rescue.db`) so data survives `docker compose down`. The healthcheck (`GET /healthz`) polls every 30 seconds.
-
-**What's in the image:** Gunicorn (`app:app` with `PYTHONPATH=/app/backend`), 2 workers, 4 threads, 120s timeout for SSE streams, non-root user, tini as PID-1. The development server (`python backend/app.py`) is still available for local iteration but should not be used in Docker.
-
-**Important:** Create `mandate_rescue.db` as an empty **file** before running `docker compose up`. Docker creates a directory if the path does not exist, which breaks SQLite. The `touch` above handles this, as does `make up`.
+Opens on http://127.0.0.1:5000. SQLite is bind-mounted (`./mandate_rescue.db`) so data survives restarts.
 
 ---
 
-## Benchmark
+## API reference
 
-Reproducible three-strategy comparison (run from the project root):
+### Core pipeline
+
+| Method | Route | Auth | Description |
+|---|---|---|---|
+| `GET` | `/` | — | Dashboard SPA |
+| `POST` | `/api/seed` | ✓ | Re-seed 180 synthetic cases |
+| `POST` | `/api/reset` | ✓ | Reset DB + re-seed + clear LLM cache |
+| `POST` | `/api/run-agent` | ✓ | Run full recovery pipeline |
+| `GET` | `/api/run-agent-stream` | ✓ | SSE: per-case pipeline traces for live view |
+| `POST` | `/api/webhooks/razorpay` | sig | Real Razorpay webhook intake |
+
+### Cases & data
+
+| Method | Route | Description |
+|---|---|---|
+| `GET` | `/api/cases` | All cases with scores, sorted by recoverability |
+| `GET` | `/api/cases/<id>/audit` | Full audit trail + messages + state transitions |
+| `GET` | `/api/cases/<id>/explain` | SHAP feature breakdown for ML prediction |
+| `GET` | `/api/cases/<id>/jobs` | Recovery jobs for a case (Phase 4) |
+| `POST` | `/api/cases/<id>/replay` | ✓ Re-run a case through the pipeline |
+
+### Analytics & metrics
+
+| Method | Route | Description |
+|---|---|---|
+| `GET` | `/api/metrics` | Core KPIs + two baselines |
+| `GET` | `/api/cohorts` | Recovery rates by tenure + merchant category |
+| `GET` | `/api/exceptions` | Cases that ended unrecovered (JOIN query) |
+| `GET` | `/api/rejected-webhooks` | Failed signature verification events |
+| `GET` | `/api/activity` | Recent audit events (DESC LIMIT, not full scan) |
+| `GET` | `/api/audit-check` | ✓ 7-rule correctness audit |
+| `POST` | `/api/ask` | NL query → parameterized SQL + LLM summary |
+| `GET` | `/api/export` | CSV summary download |
+| `GET` | `/api/simulate` | ✓ Monte Carlo policy sandbox |
+
+### Phase 5: Revenue intelligence
+
+| Method | Route | Description |
+|---|---|---|
+| `GET` | `/api/intelligence/summary` | Full intelligence summary (all aggregates, one call) |
+| `GET` | `/api/intelligence/by-failure-reason` | Actual recovery rates vs model priors |
+| `GET` | `/api/intelligence/by-strategy` | Strategy outcomes from audit_log |
+| `GET` | `/api/intelligence/incremental-revenue` | Actual vs naive vs dumb-persistence |
+| `GET` | `/api/intelligence/merchant-learning` | Best strategy per merchant category |
+| `GET` | `/api/risk/summary` | Top at-risk cases with scores and factors |
+| `GET` | `/api/risk/case/<id>` | Risk score + contributing factors for one case |
+| `GET` | `/api/anomalies` | Active anomaly alerts (6 detectors) |
+| `GET` | `/api/adaptive-policy/recommend/<id>` | Data-driven strategy recommendation + explain |
+| `GET` | `/api/adaptive-policy/summary` | Policy performance + governance thresholds |
+| `GET` | `/api/economic-value/portfolio` | E[net_value] across all active cases |
+| `GET` | `/api/economic-value/case/<id>` | EV + incremental value for one case |
+| `POST` | `/api/investigate` | Revenue Investigator — analytical Q&A |
+
+### Phase 4: Scheduler & execution
+
+| Method | Route | Auth | Description |
+|---|---|---|---|
+| `POST` | `/api/scheduler/run` | ✓ | Execute all due recovery jobs |
+| `GET` | `/api/scheduler/jobs` | — | List all recovery jobs |
+| `GET` | `/api/scheduler/jobs/<id>` | — | Single job detail |
+| `POST` | `/api/scheduler/jobs/cancel` | ✓ | Cancel a scheduled job |
+| `GET` | `/api/execution/status` | — | Credential status + job summary |
+| `GET` | `/api/execution/verify-credentials` | — | Live Razorpay credential probe |
+
+---
+
+## Data model
+
+```
+mandate_failures            (PK: customer_id)
+  customer_id, amount, failure_reason, failure_date,
+  past_retry_count, customer_tenure_months, past_payment_success_rate,
+  merchant_category, case_status, raw_event_type,
+  mandate_limit, compliance_status, dunning_stage,
+  health_score, history_success_days, webhook_signature, source
+
+audit_log                   (append-only, AUTOINCREMENT)
+  event_id, customer_id → mandate_failures,
+  event_timestamp, event_type, action_taken, outcome,
+  attempt_number, reasoning_text, case_status_after
+
+webhook_events              (idempotency table)
+  id, razorpay_event_id UNIQUE, payload_hash,
+  received_at, processed, customer_id, event_type, rejected_reason
+
+state_transitions           (FSM history, AUTOINCREMENT)
+  id, customer_id → mandate_failures,
+  from_status, to_status, transitioned_at, triggered_by
+
+recovery_jobs               (Phase 4: durable job queue)
+  job_id (PK UUID), customer_id → mandate_failures,
+  attempt_number, execution_mode (real_test | simulation),
+  status (scheduled|claimed|executing|succeeded|failed|cancelled|exhausted),
+  scheduled_at, claimed_at, executed_at, outcome,
+  razorpay_payment_id, razorpay_payment_link_id, payment_link_url,
+  amount_rupees, failure_reason, retry_count, max_retries,
+  idempotency_key UNIQUE (customer_id:attempt_number)
+```
+
+**Indexes added (Phase 5):**
+- `mandate_failures(case_status)`, `(failure_reason)`, `(merchant_category)`, `(amount)`, `(failure_date)`
+- `audit_log(event_id DESC)` — for `/api/activity` DESC LIMIT query
+
+---
+
+## Phase 4: Real Razorpay Test Mode execution
+
+### What works in Test Mode
+
+| Operation | Supported | Notes |
+|---|---|---|
+| Webhook signature verification | ✅ Real | HMAC-SHA256 over raw bytes, `RAZORPAY_WEBHOOK_SECRET` |
+| Fetch subscription status | ✅ Real | `GET /subscriptions/{id}` |
+| Capture authorized payment | ✅ Real | `POST /payments/{id}/capture` — idempotent |
+| Create payment link | ✅ Real | `POST /payment_links` — for customer re-authorization |
+| Fetch payment details | ✅ Real | `GET /payments/{id}` |
+
+### Honest limitation
+
+Razorpay Test Mode **does not expose** a `POST /subscriptions/{id}/charge` endpoint. There is no API to programmatically trigger an out-of-cycle UPI debit attempt. The real execution path therefore creates a **Payment Link** for customer-driven completion. This is documented in `payment_executor.py` and shown in the dashboard.
+
+### Execution modes
+
+```
+ExecutionMode.REAL_TEST   → calls Razorpay Test API; outcome from API response
+                            Used for source='razorpay_live' cases with valid credentials
+
+ExecutionMode.SIMULATION  → RNG-based; no HTTP calls
+                            Used for synthetic benchmark/demo cases — always labelled
+```
+
+The mode is locked into the job row at scheduling time. A simulation job never silently runs as real, and a real job never falls back to simulation without an explicit `CONFIGURATION_ERROR` result.
+
+### Running real integration tests
 
 ```bash
-python benchmark.py --n-runs 30 --seed 42
+# Set credentials first:
+export RZP_INTEGRATION=1
+export RAZORPAY_KEY_ID=rzp_test_...
+export RAZORPAY_KEY_SECRET=...
+
+pytest backend/tests/test_phase4_integration.py -k "real" -v
 ```
-
-Compares Baseline A (naive, 1 attempt), Baseline B (dumb persistence, 3 attempts, no strategy), and Mandate Rescue (full pipeline). All three use the identical per-attempt probability model — only the strategy differs. Results are Monte Carlo means ± 95% CI using Student's t-distribution.
-
-Example output (seed=42, 30 runs):
-
-```
-Strategy              Recovery rate       Recovered Rs      Escal. rate
-Baseline A (naive)    46.7% +/-0.0pp      Rs 275,810 +/-Rs0  n/a
-Baseline B (persist.) 76.7% +/-0.0pp      Rs 438,916 +/-Rs0  n/a
-Mandate Rescue        75.4% +/-0.5pp      Rs 433,516 +/-Rs5k 23.0% +/-0.5pp
-```
-
-The negative B→MR delta (~-1.3pp) is expected: the dataset's `mandate_revoked` cases (15%) are immediately escalated by the rule-based pipeline (no retries permitted), while Baseline B retries them blindly, inflating its raw count. The honest measure is the A→MR delta (+28.7pp) which represents everything the intelligent pipeline contributes vs doing nothing. Policy violations (duplicate processing events): 0 across all runs.
 
 ---
 
+## Phase 5: Revenue intelligence
+
+### Risk prediction (`risk_engine.py`)
+
+Every active case gets a **risk score (0–100)** based on:
+
+```
+urgency      = 100 - recoverability_score  (harder to recover → more urgent)
+exposure     = amount / p95_amount          (high-value cases weighted up)
+risk_score   = urgency × (0.6 + 0.4 × exposure) + health_modifier + over_limit_penalty
+```
+
+Each score includes **contributing factors** (recoverability score, failure reason severity, health band, retry count, over-limit status) and an **intervention window** from salary_window.py for salary-timing-sensitive cases.
+
+Data type: `"estimate"` — derived from stored features, not a guaranteed outcome.
+
+### Adaptive policy (`adaptive_policy.py`)
+
+Compares the rule-based default strategy against **observed historical recovery rates** per (strategy × merchant_category). Recommends the better-performing option when sufficient data exists (≥5 cases). Every recommendation includes an `explain` trace.
+
+**Governance tiers** (configurable via env):
+
+| Tier | Condition | Action |
+|---|---|---|
+| `BLOCK` | `mandate_revoked` | Never retry — policy |
+| `REQUIRE_APPROVAL` | Amount ≥ `APPROVAL_THRESHOLD_RS` (default Rs 10,000) | Explicit approval before execution |
+| `RECOMMEND` | Observed rate < `LOW_CONFIDENCE_RATE` (default 50%) | Surface for review |
+| `AUTO_EXECUTE` | Standard case, sufficient confidence | Proceed |
+
+### Economic value (`economic_value.py`)
+
+```
+E[net_value] = P(recovery) × amount_recovered
+              − intervention_cost  (configurable: SMS, email, retry API)
+              − friction_cost      (customer LTV risk × health_band rate)
+```
+
+All cost parameters are configurable via environment variables:
+`RETRY_COST_RS`, `SMS_COST_RS`, `EMAIL_COST_RS`, `FRICTION_RATE_HEALTHY/AT_RISK/HIGH_RISK`
+
+### Anomaly detection (`anomaly_detector.py`)
+
+Six detectors, statistical thresholds, sorted critical-first:
+
+| Detector | Trigger condition |
+|---|---|
+| `failure_rate_spike` | Segment failure rate deviates > 30% from overall (relative) |
+| `escalation_spike` | Escalation rate ≥ 40% overall, or +45% above average for a reason |
+| `recovery_rate_drop` | Actual rate deviates > 30% from model-expected rate |
+| `retry_exhaustion_pattern` | > 30% of non-revoked cases hitting the retry cap without recovery |
+| `compliance_degradation` | Non-compliant pre-debit rate ≥ 25% |
+| `amount_concentration` | Top 10% of cases hold > 70% of at-risk revenue |
+
+All thresholds configurable via environment variables.
+
+### Revenue Investigator (`/api/investigate`)
+
+Answers analytical questions from real stored data — no hardcoded answers:
+
+```
+POST /api/investigate
+{"question": "Which recovery strategy performs best?"}
+
+→ {
+    "ok": true,
+    "question_type": "strategy_performance",
+    "answer": "Best-performing strategy: 'higher-limit re-authorization' (100.0% recovery on 5 cases, Rs 27,236 recovered).",
+    "evidence": { "by_strategy": [...] },
+    "recommendation": "Prioritise 'higher-limit re-authorization' for applicable cases.",
+    "data_type": "actual"
+  }
+```
+
+Questions routed deterministically (no LLM needed for well-formed analytical queries):
+- Recovery performance / why did recovery fall
+- Which failure type has most lost revenue
+- Which strategy performs best
+- Revenue at risk (with [ESTIMATE] label)
+- Anomalies / what is failing
+- Recommendations / what should we change
+- Freeform case filtering by reason/category
+
+---
+
+## Performance
+
+Measured on 180 cases (warm process, development machine):
+
+| Operation | Before Phase 5 | After Phase 5 | Notes |
+|---|---|---|---|
+| `/api/cases` (180 rows) | ~6,500 ms | **13 ms** | Batch ML predict + single health_score |
+| `/api/exceptions` | ~14 ms (N+1) | **0.9 ms** | JOIN query |
+| `/api/rejected-webhooks` | ~5 ms (N+1) | **0.2 ms** | JOIN query |
+| `/api/activity` | loads all rows | **0.5 ms** | DESC LIMIT 40 |
+| `risk_engine.revenue_at_risk` | new | **2.7 ms** | |
+| `intelligence.full_summary` | new | **46 ms** | 6 aggregates |
+| `anomaly_detector` | new | **10 ms** | 6 detectors |
+
+The ML cold-start (pandas + sklearn import, ~3.5s) is eliminated for Flask by a background thread in `predict.py:_eager_load()` that pre-warms the model at import time.
+
+---
+
+## Testing
+
+```bash
+pip install -r requirements-dev.txt
+pytest                                           # 463 tests (full suite)
+pytest --ignore=backend/tests/test_chaos_suite.py --ignore=backend/tests/test_benchmark.py  # fast subset
+pytest backend/tests/test_performance_p5.py -s  # performance benchmarks with timings
+```
+
+### Test modules
+
+| Module | Tests | Coverage |
+|---|---|---|
+| `test_scoring.py` | 18 | Formula, weights, boundaries, explain_score |
+| `test_intelligence.py` | 20 | All aggregates, data_type labels, no hardcoded values |
+| `test_risk_engine.py` | 12 | Score bounds, factors, severity, empty DB |
+| `test_adaptive_policy.py` | 13 | Governance tiers, explain steps, batch recommend |
+| `test_economic_value.py` | 15 | Formula, costs, incremental, portfolio |
+| `test_anomaly_detector.py` | 15 | All 6 detectors, thresholds, data_type |
+| `test_performance_p5.py` | 11 | Latency budgets, batch-vs-single, no hardcoded values |
+| `test_payment_executor.py` | 24 | All outcomes, no-fake-success invariant |
+| `test_scheduler.py` | 22 | Idempotency, claim, execute, stale reset |
+| `test_phase4_integration.py` | 12 | Full lifecycle, duplicate guard, failure handling |
+| Existing (Phases 1–3) | ~311 | Scoring, salary window, messaging, metrics, audit, chaos, concurrency, state machine, replay, security, simulation |
+
+### Opt-in real Razorpay integration tests
+
+```bash
+RZP_INTEGRATION=1 \
+RAZORPAY_KEY_ID=rzp_test_... \
+RAZORPAY_KEY_SECRET=... \
+pytest backend/tests/test_phase4_integration.py -k "real" -v
+```
+
+---
+
+## Security
+
+| Area | Implementation |
+|---|---|
+| Synthetic webhook signatures | HMAC-SHA256 over canonical string, `hmac.compare_digest`, fail-closed |
+| Real Razorpay webhook signatures | HMAC-SHA256 over **raw body bytes** (never re-serialized), constant-time |
+| Placeholder secret detection | `_INSECURE_PLACEHOLDERS` frozenset — known bad values rejected |
+| API-key gate | `X-API-Key` on all mutating and compute-heavy endpoints |
+| NL query injection | LLM output filtered via hardcoded field whitelist; all SQL parameterized |
+| Input validation | Amount: finite, positive, ≤ Rs 1 crore; invalid events excluded from aggregates |
+| Investigator trust boundary | LLM routes analytical questions; never generates SQL; fallback to deterministic routing |
+| Security headers | CSP, X-Content-Type-Options, X-Frame-Options, Referrer-Policy on every response |
+| Request size limit | 1 MB body limit — oversized returns 413 JSON |
+| CDN integrity | Chart.js with `integrity="sha384-..."` + `crossorigin` |
+| Correlation ID | Per-request `X-Correlation-ID` in all logs and responses |
+
+---
+
+## Data trust
+
+Every Phase 5 metric carries an explicit `data_type` label:
+
+| Label | Meaning |
+|---|---|
+| `"actual"` | Computed from real `mandate_failures` / `audit_log` rows |
+| `"estimate"` | Derived from the probability model or configurable parameters |
+| `"simulation"` | Monte Carlo RNG (Policy Sandbox, strategy comparison) |
+| `"mixed"` | Response contains both actual and estimated fields — each field is individually labelled |
+
+No metric is hardcoded. All baselines are clearly marked `[ESTIMATE — simulation-based counterfactual]`.
+
+---
 
 ## ML validation layer
 
-`backend/ml/` is a scikit-learn model that predicts recovery likelihood independently of the rule-based agent. It is **additive and non-decision** — it validates the rule-based scoring, not replaces it.
-
 ```bash
-python backend/ml/train_model.py   # train + evaluate, writes model.pkl + metrics.json
+python backend/ml/train_model.py   # trains LR vs GBM, writes model.pkl + metrics.json
 ```
 
-The model competes LogisticRegression vs GradientBoostingClassifier on a stratified 80/20 split; the winner (by ROC-AUC) is saved. SHAP values provide per-case feature contributions shown in the Case detail drawer and the ML Insights tab.
-
-**Important caveat:** The training data (`training_data.csv`) comes from repeated runs of the synthetic simulation. Labels (`recovered`/not) are stochastic (`rng.random() < prob`) — not real payment outcomes. The model therefore learns an approximation of the scoring formula, not real customer behaviour. This is clearly labeled throughout the UI: "additive validation layer — does not drive decisions."
-
----
-
-## Limitations and honest status
-
-| Feature | Status |
-|---|---|
-| Payment retry execution | **Simulated** — `rng.random() < prob`, no Razorpay API call |
-| Message delivery (SMS/WhatsApp/Email) | **Generated, not sent** — templates only |
-| Real Razorpay integration | **Test mode only** — signature verification is real; no live charges |
-| RBI pre-debit scheduling | **Timestamp check only** — scheduling is simulated |
-| ML training data | **Synthetic** — bootstrapped from simulation runs, not real payments |
-| LLM model | `llama-3.1-8b-instant` via Groq (default) — falls back to templates if key absent or rate-limited |
-| Multi-worker safety | SQLite single-writer; `busy_timeout=15s` + `BEGIN IMMEDIATE` lock handles brief contention |
-| Authentication | Single shared API key; no user accounts, no token rotation |
-| Rate limiting | Not implemented; documented for production path |
-| Concurrent processing | `BEGIN IMMEDIATE` serialises same-case concurrent workers; not a distributed lock |
+- Competes LogisticRegression vs GradientBoostingClassifier on stratified 80/20 split
+- Winner saved by ROC-AUC
+- SHAP values per case (case detail drawer) + global importance (ML Insights tab)
+- **Non-decision**: the model validates the rule-based scoring; it never drives retry/escalation/compliance
+- **Synthetic training data**: labels come from simulation runs, not real payments — explicitly stated throughout the UI
 
 ---
 
 ## Architecture decisions
 
-Key engineering tradeoffs made in this project:
+**1. Four-agent pipeline with append-only audit trail.**
+Each agent has one responsibility. Every decision is a row in `audit_log`. The trail is immutable — no UPDATE or DELETE on audit rows — so compliance checks and case replay always see the original decision.
 
-**1. Event-driven pipeline over monolithic request handling.**
-Every webhook enters a pipeline of four independent agents (Diagnosis → Triage → Strategy → Communication). Each stage has a single responsibility and writes to an append-only audit log. This makes every decision independently observable and testable without coupling classification to retry logic or narration.
+**2. Idempotency at the DB layer, not application code.**
+`webhook_events.razorpay_event_id UNIQUE` and `recovery_jobs.idempotency_key UNIQUE` prevent double processing even if the application crashes between check and write. `BEGIN IMMEDIATE` serialises concurrent workers before the terminal-audit check.
 
-**2. Idempotency at the database layer, not just application code.**
-`webhook_events.razorpay_event_id` has a UNIQUE constraint — a duplicate delivery fails at the INSERT, not inside a Python if-check. This prevents double processing even if the application crashes between the check and the write. `BEGIN IMMEDIATE` serialises concurrent workers before the terminal-audit check, covering the race window that pure application-level checks miss.
+**3. Explicit FSM with recorded transitions.**
+`LEGAL_TRANSITIONS` in `db.py` defines every valid `case_status` change. `_RunContext.set_status()` validates at runtime; an illegal transition raises `ValueError` immediately.
 
-**3. Explicit state machine with recorded transitions.**
-`case_status` follows a defined set of legal transitions (`LEGAL_TRANSITIONS` in `db.py`). The `_RunContext.set_status()` method validates every transition at runtime and appends a row to `state_transitions`. An illegal transition (e.g. `recovered → in_progress`) raises `ValueError` immediately — it does not silently succeed. This makes a class of correctness bugs impossible rather than just unlikely.
+**4. LLM for narration only — never decisions.**
+The LLM narrates already-made rule-based decisions. It never drives retry/escalation/compliance. If it's unavailable, template fallbacks maintain full functionality.
 
-**4. AI used for narration, not decisions.**
-The LLM (Groq/llama) narrates decisions that the deterministic rule-based engine has already made. It never decides retry/escalation/compliance. This is a deliberate trust boundary: unvalidated LLM output cannot create duplicate charges, skip compliance checks, or affect money totals. The LLM can produce wrong text; the audit trail is always correct.
+**5. Explicit execution modes — no silent fallback.**
+`ExecutionMode.REAL_TEST` calls Razorpay. `ExecutionMode.SIMULATION` uses RNG. If real execution is requested but credentials are absent, the job fails with `CONFIGURATION_ERROR` — not silently marked as recovered.
 
-**5. Two baselines instead of one.**
-`run_baseline()` (1 attempt, no strategy) and `run_dumb_persistence_baseline()` (3 attempts, no strategy) give two distinct comparisons. The first answers "did the agent beat doing nothing?" The second answers "did the agent's *strategy* add value beyond just retrying more?" The second is the harder, more defensible claim.
+**6. data_type labels on all intelligence outputs.**
+Every Phase 5 function attaches `data_type: "actual" | "estimate" | "simulation" | "mixed"` so the UI always renders the correct label. A simulated outcome never silently appears as a real recovery.
 
-**6. Synthetic simulation alongside Razorpay test-mode, never mixed.**
-The 180-case synthetic simulation is seeded (deterministic), labelled `source: synthetic`, and exists purely for demo scale. Real Razorpay events are labelled `source: razorpay_live`. Both flow through the identical recovery pipeline, but they are always distinguishable in the data. The benchmark and chaos suite operate only on the synthetic data; they never touch live-sourced cases.
-
-**7. SQLite with a 15-second busy timeout and single-writer discipline.**
-SQLite was chosen to eliminate infrastructure dependencies (no Postgres, no Redis, no message queue) while remaining provably correct for a single-writer workload. Two Gunicorn workers share one writer lock; brief contention is handled by `busy_timeout`. A production deployment would replace SQLite with PostgreSQL and use `SELECT FOR UPDATE` instead of `BEGIN IMMEDIATE`.
+**7. Performance measured before optimizing.**
+The 6,500ms `/api/cases` bottleneck was measured (N×DataFrame construction + ML predict). The fix (batch prediction + single health_score) was verified to reduce it to 13ms. No optimization was added without measurement.
 
 ---
 
-## Future work
+## Known limitations
 
-- Replace SQLite with PostgreSQL for multi-worker production deployment
-- Implement real Razorpay payment retry API calls (test-mode first)
-- Add Razorpay Smart Collect / recurring-charge API for real mandate renewal links
-- SMS/WhatsApp delivery via Razorpay Messages or a third-party provider
-- Per-user authentication with scoped roles (merchant vs admin)
-- Rate limiting on AI query and agent-execution endpoints
-- Scheduled retry execution via a proper task queue (Celery / RQ)
-- Real ML training dataset from anonymised historical payment outcomes
+| Feature | Status |
+|---|---|
+| UPI debit trigger via API | **Not possible in Razorpay Test Mode** — no `POST /subscriptions/{id}/charge` endpoint exists |
+| Message delivery | **Generated, not sent** — templates only |
+| LLM model | `openai/gpt-oss-20b` via Groq — falls back to templates on rate-limit; `LLM_LIVE_TOP_N=5` by default to respect 8K TPM free-tier |
+| ML training data | **Synthetic** — labels from simulation, not real payments |
+| Multi-worker | SQLite single-writer; `busy_timeout=15s` + `BEGIN IMMEDIATE` handles brief contention |
+| Authentication | Single shared API key — no user accounts or token rotation |
+| Rate limiting | Not implemented on public read endpoints |
 
 ---
 
@@ -412,42 +547,80 @@ SQLite was chosen to eliminate infrastructure dependencies (no Postgres, no Redi
 ```
 Mandate_Rescue/
 ├── backend/
-│   ├── app.py               # Flask app, all API routes, SSE, security middleware
-│   ├── db.py                # SQLite access layer (parameterized SQL, no ORM)
-│   ├── seed.py              # 180-record synthetic data generator (seed=42)
-│   ├── agent.py             # Four-agent pipeline: Diagnosis/Triage/Strategy/Comms
-│   ├── scoring.py           # Recoverability score (weighted 0-100)
-│   ├── salary_window.py     # Per-customer salary-window inference
-│   ├── messaging.py         # Template message generation (Standard + Hinglish)
-│   ├── llm_client.py        # LLM wrapper: reasoning, messages, NL-query translation
-│   ├── query.py             # NL query execution (parameterized SQL + computed filters)
-│   ├── metrics.py           # Dashboard KPI aggregations from real rows
-│   ├── baseline.py          # Naive + dumb-persistence baselines
-│   ├── health.py            # Subscription health score
-│   ├── security.py          # API-key gate
-│   ├── webhook_security.py  # Fail-closed HMAC for synthetic demo pipeline
-│   ├── razorpay_adapter.py  # Real Razorpay webhook verification + event mapping
-│   ├── razorpay_client.py   # Test-mode subscription/plan creation
-│   ├── simulation_runner.py # Monte Carlo policy simulation (Policy Sandbox)
-│   ├── export.py            # CSV summary export
-│   ├── audit_check.py       # 7 re-derived correctness checks (read-only)
-│   ├── chaos_test.py        # 10 adversarial scenarios (isolated in-memory DBs)
-│   ├── ml/                  # Additive ML validation layer (non-decision)
-│   │   ├── train_model.py   # LR vs GBM, stratified split, saves model.pkl
-│   │   ├── predict.py       # Lazy-load inference
-│   │   └── explain.py       # SHAP per-case + global feature importance
-│   └── tests/               # pytest suite (321 tests)
-├── benchmark.py             # Reproducible 3-strategy comparison CLI
+│   ├── app.py                # Flask app, 49 routes, SSE, security middleware
+│   ├── agent.py              # Four-agent pipeline + execution mode dispatch
+│   ├── db.py                 # SQLite DAL, FSM, recovery_jobs queue
+│   ├── seed.py               # 180-record synthetic generator (seed=42)
+│   ├── scoring.py            # Recoverability score (weighted 0-100)
+│   ├── salary_window.py      # Salary-window inference
+│   ├── messaging.py          # Template nudges (Standard + Hinglish)
+│   ├── llm_client.py         # LLM wrapper with fast-fail on rate-limit
+│   ├── query.py              # NL query → parameterized SQL
+│   ├── metrics.py            # KPI aggregations (JOIN queries, no N+1)
+│   ├── baseline.py           # Naive + dumb-persistence baselines
+│   ├── health.py             # Subscription health score
+│   ├── security.py           # API-key gate
+│   ├── webhook_security.py   # Fail-closed HMAC for synthetic pipeline
+│   ├── razorpay_adapter.py   # Real Razorpay webhook verification + mapping
+│   ├── razorpay_client.py    # Test-mode API client (plans, subscriptions, payments, links)
+│   ├── payment_executor.py   # Phase 4: REAL_TEST / SIMULATION execution service
+│   ├── scheduler.py          # Phase 4: durable job queue worker
+│   ├── intelligence.py       # Phase 5: strategy/failure-reason/merchant analytics
+│   ├── risk_engine.py        # Phase 5: revenue-at-risk prediction
+│   ├── adaptive_policy.py    # Phase 5: data-driven strategy recommendation + governance
+│   ├── economic_value.py     # Phase 5: E[net_value] per intervention
+│   ├── anomaly_detector.py   # Phase 5: 6 statistical anomaly detectors
+│   ├── simulation_runner.py  # Monte Carlo policy sandbox
+│   ├── export.py             # CSV export
+│   ├── audit_check.py        # 7-rule correctness audit (read-only)
+│   ├── chaos_test.py         # 10 adversarial scenarios (isolated in-memory DBs)
+│   ├── ml/
+│   │   ├── train_model.py    # LR vs GBM, stratified split, model.pkl + metrics.json
+│   │   ├── predict.py        # Batch-optimised inference + background warm-up
+│   │   └── explain.py        # SHAP per-case + global importance
+│   └── tests/                # 463 tests across 30 test files
+│       ├── test_intelligence.py
+│       ├── test_risk_engine.py
+│       ├── test_adaptive_policy.py
+│       ├── test_economic_value.py
+│       ├── test_anomaly_detector.py
+│       ├── test_performance_p5.py
+│       ├── test_payment_executor.py
+│       ├── test_scheduler.py
+│       ├── test_phase4_integration.py
+│       └── ... (21 more test files)
+├── benchmark.py              # Reproducible 3-strategy comparison CLI
 ├── frontend/
-│   ├── templates/index.html # SPA shell (accessible, keyboard shortcuts)
+│   ├── templates/index.html  # SPA: 9 views including Analytics (Phase 5)
 │   └── static/
-│       ├── style.css        # Design system: Razorpay blue, Inter/JetBrains Mono
-│       └── app.js           # Dashboard logic, SSE, Case Replay, Funnel, Inspector
-├── scripts/dev/             # Dev/probe scripts (not part of the app)
-├── .github/workflows/ci.yml # GitHub Actions: pytest + audit + chaos on every push
-├── Dockerfile               # Gunicorn, non-root user, tini, healthcheck
-├── docker-compose.yml       # Single-command run with bind-mounted DB
-├── requirements.txt         # Flask, scikit-learn, shap, scipy, gunicorn, dotenv
-├── requirements-dev.txt     # + pytest, pytest-cov
-└── pytest.ini               # testpaths, slow marker
+│       ├── style.css         # Design system: Razorpay-inspired, light/dark
+│       └── app.js            # Dashboard logic, Phase 4/5 panels
+├── .github/workflows/ci.yml  # GitHub Actions: pytest + audit + chaos
+├── Dockerfile                # Gunicorn, non-root, tini, healthcheck
+├── docker-compose.yml
+├── requirements.txt
+├── requirements-dev.txt
+└── pytest.ini
 ```
+
+---
+
+## Benchmark
+
+```bash
+python benchmark.py --n-runs 30 --seed 42
+```
+
+Compares Baseline A (naive, 1 attempt), Baseline B (dumb persistence, 3 attempts), and Mandate Rescue (full pipeline). All use the same probability model — only strategy differs. Results are Monte Carlo means ± 95% CI (Student's t).
+
+---
+
+## Roadmap
+
+- Replace SQLite with PostgreSQL for multi-worker production deployment
+- Real UPI debit trigger when Razorpay exposes a suitable API
+- SMS/WhatsApp delivery via Razorpay Messages
+- Per-user authentication with merchant scoping
+- Real ML training data from anonymised historical outcomes
+- Time-series dashboards (daily/weekly trend charts)
+- Reinforcement learning feedback loop for adaptive policy weights

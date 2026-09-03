@@ -1,4 +1,4 @@
-"""Recovery agent pipeline (design.md section 7).
+﻿"""Recovery agent pipeline (design.md section 7).
 
 The recovery flow is organized as an explicit four-agent pipeline. Each stage is a
 small class with a single `process(...)` method, so the orchestration reads as:
@@ -131,9 +131,10 @@ def replace(policy, **kwargs):
 # Cost/latency control for live runs: generate LLM narration/messages live for only
 # the top-N highest-value cases; the rest use deterministic templates. This keeps a
 # full 180-case run inside the demo's latency budget against a real remote LLM.
-# Set via env LLM_LIVE_TOP_N (0 = no cap: every case may use the LLM). See README.
+# Lowered to 5 (from 20) to stay within the 8K TPM free-tier Groq limit.
+# Set LLM_LIVE_TOP_N=20 in .env for broader narration when rate limits allow.
 import os as _os
-LLM_LIVE_TOP_N = int(_os.environ.get("LLM_LIVE_TOP_N", "20"))
+LLM_LIVE_TOP_N = int(_os.environ.get("LLM_LIVE_TOP_N", "5"))
 
 # Base per-attempt success probability by failure_reason. Blended with the case's
 # recoverability score so stronger cases are likelier to recover.

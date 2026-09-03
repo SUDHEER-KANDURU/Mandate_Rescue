@@ -82,6 +82,7 @@ CREATE TABLE IF NOT EXISTS audit_log (
 
 CREATE INDEX IF NOT EXISTS idx_audit_customer ON audit_log(customer_id);
 CREATE INDEX IF NOT EXISTS idx_audit_event_type ON audit_log(event_type);
+CREATE INDEX IF NOT EXISTS idx_audit_event_id_desc ON audit_log(event_id DESC);
 
 CREATE TABLE IF NOT EXISTS webhook_events (
     id                INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -201,6 +202,17 @@ CREATE INDEX IF NOT EXISTS idx_state_transitions_customer ON state_transitions(c
         "CREATE INDEX IF NOT EXISTS idx_webhook_events_customer "
         "ON webhook_events(customer_id)"
     )
+    # Phase 5: indexes on mandate_failures for common filter/aggregation patterns.
+    # These were missing and caused full table scans on every query.py, metrics.py,
+    # and /api/cases call that filters by failure_reason, merchant_category, or status.
+    conn.executescript("""
+CREATE INDEX IF NOT EXISTS idx_mf_case_status      ON mandate_failures(case_status);
+CREATE INDEX IF NOT EXISTS idx_mf_failure_reason   ON mandate_failures(failure_reason);
+CREATE INDEX IF NOT EXISTS idx_mf_merchant_category ON mandate_failures(merchant_category);
+CREATE INDEX IF NOT EXISTS idx_mf_amount           ON mandate_failures(amount);
+CREATE INDEX IF NOT EXISTS idx_mf_failure_date     ON mandate_failures(failure_date);
+CREATE INDEX IF NOT EXISTS idx_audit_event_id_desc ON audit_log(event_id DESC);
+""")
     # Phase 4: recovery_jobs table and indexes (added in schema revision 4).
     conn.executescript("""
 CREATE TABLE IF NOT EXISTS recovery_jobs (

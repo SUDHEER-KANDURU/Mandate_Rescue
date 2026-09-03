@@ -43,17 +43,20 @@ API_URL = API_BASE.rstrip("/") + "/chat/completions"
 # Override via LLM_MODEL env var to point at any OpenAI-compatible model
 # (e.g. LLM_MODEL=gpt-4o-mini for OpenAI, LLM_MODEL=llama-3.3-70b-versatile
 # for accounts with Llama access).
-MODEL = os.environ.get("LLM_MODEL", "openai/gpt-oss-20b")
+MODEL = os.environ.get("LLM_MODEL", "llama3-8b-8192")
 
 # Short timeout: this is decoration on top of a working system, so we would rather
 # fall back to templates quickly than make the UI wait on a slow call.
-REQUEST_TIMEOUT = float(os.environ.get("LLM_TIMEOUT", "8"))
+REQUEST_TIMEOUT = float(os.environ.get("LLM_TIMEOUT", "5"))
 
 # Retry policy for TRANSIENT failures (HTTP 429 rate-limit, HTTP 5xx, timeouts,
 # transient network errors). A malformed/misshapen response or an auth error (401/403)
-# is NOT transient, so we do not retry those. Backoff is exponential with a small base
-# so 2-3 attempts still stay inside a reasonable UI budget.
-LLM_MAX_ATTEMPTS = int(os.environ.get("LLM_MAX_ATTEMPTS", "3"))
+# is NOT transient, so we do not retry those.
+# Rate-limit (429): only 1 retry — the TPM window is 1 min, so retrying immediately
+# just burns more time. Fail fast and use the template fallback instead.
+# Other transient errors (5xx, timeout): up to LLM_MAX_ATTEMPTS retries.
+LLM_MAX_ATTEMPTS = int(os.environ.get("LLM_MAX_ATTEMPTS", "2"))
+LLM_MAX_ATTEMPTS_RATE_LIMIT = int(os.environ.get("LLM_MAX_ATTEMPTS_RATE_LIMIT", "1"))
 LLM_BACKOFF_BASE = float(os.environ.get("LLM_BACKOFF_BASE", "0.5"))  # seconds
 
 # Failure-reason codes surfaced to callers via the last-error channel so the API can
@@ -226,18 +229,22 @@ def _chat(system_prompt, user_prompt, max_tokens=320, temperature=0.4):
             _LAST_ERROR = None
             return text
         last_code = code
-        # Retry only transient failures, and only if attempts remain.
-        if code in _TRANSIENT and attempt < LLM_MAX_ATTEMPTS:
+        # Rate-limit: use the lower retry cap to fail fast and save latency.
+        # Other transient errors: use the full retry budget.
+        max_for_this_error = (
+            LLM_MAX_ATTEMPTS_RATE_LIMIT if code == ERR_RATE_LIMIT else LLM_MAX_ATTEMPTS
+        )
+        if code in _TRANSIENT and attempt < max_for_this_error:
             backoff = LLM_BACKOFF_BASE * (2 ** (attempt - 1))
             log.info("LLM transient failure (%s), retry %d/%d after %.2fs",
-                     code, attempt, LLM_MAX_ATTEMPTS - 1, backoff)
+                     code, attempt, max_for_this_error - 1, backoff)
             time.sleep(backoff)
             continue
         break
 
     _LAST_ERROR = last_code
     log.warning("LLM call failed after %d attempt(s); final reason=%s",
-                LLM_MAX_ATTEMPTS if last_code in _TRANSIENT else 1, last_code)
+                attempt, last_code)
     return None
 
 

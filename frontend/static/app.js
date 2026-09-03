@@ -1,4 +1,4 @@
-"use strict";
+﻿"use strict";
 
 // --- Formatting helpers -----------------------------------------------------
 function rupees(n) {
@@ -43,7 +43,9 @@ async function fetchApiKey() {
 }
 
 async function getJSON(url) {
-  const r = await fetch(url);
+  const r = await fetch(url, {
+    headers: _apiKey ? { "X-API-Key": _apiKey } : {},
+  });
   if (!r.ok) throw new Error("Request failed: " + url + " (" + r.status + ")");
   return r.json();
 }
@@ -753,9 +755,14 @@ async function openDrawer(customerId) {
   drawer.classList.remove("hidden");
 
   try {
-    const data = await getJSON("/api/cases/" + encodeURIComponent(customerId) + "/audit");
+    // Load audit data and recovery jobs in parallel (Phase 4).
+    const [data, jobsData] = await Promise.all([
+      getJSON("/api/cases/" + encodeURIComponent(customerId) + "/audit"),
+      getJSON("/api/cases/" + encodeURIComponent(customerId) + "/jobs").catch(() => ({ jobs: [] })),
+    ]);
     const c = data.case;
-    document.getElementById("drawer-title").textContent = maskId(c.customer_id) + " \u00B7 " + titleCase(c.failure_reason);
+    document.getElementById("drawer-title").textContent =
+      maskId(c.customer_id) + " \u00B7 " + titleCase(c.failure_reason);
     body.innerHTML = "";
 
     // Summary grid
@@ -780,12 +787,18 @@ async function openDrawer(customerId) {
     }
     body.appendChild(grid);
 
+    // Phase 4: Recovery execution panel (real jobs with mode / outcome / Razorpay IDs).
+    const jobs = (jobsData && jobsData.jobs) || [];
+    if (jobs.length > 0) {
+      body.appendChild(el("div", "section-title", "Recovery execution"));
+      body.appendChild(renderExecutionPanel(jobs));
+    }
+
     // Generated messages (R9)
     body.appendChild(el("div", "section-title", "Nudge message (with Hinglish variant)"));
     body.appendChild(renderMessages(data.messages));
 
     // Why the model predicts this (SHAP) — ML validation layer, additive/non-decision.
-    // Loaded separately so a slow/unavailable SHAP call never blocks the drawer.
     const shapTitle = el("div", "section-title", "Why the model predicts this");
     shapTitle.appendChild(el("span", "section-tag", "ML validation layer"));
     body.appendChild(shapTitle);
@@ -808,13 +821,12 @@ async function openDrawer(customerId) {
       });
 
     // Audit trail / explainability (R4/R7)
-    body.appendChild(el("div", "section-title", "Audit trail \u00B7 the agent's reasoning, step by step"));
+    body.appendChild(el("div", "section-title", "Audit trail \u00B7 the agent\u2019s reasoning, step by step"));
     body.appendChild(renderTimeline(data.audit));
   } catch (err) {
     body.textContent = "Failed to load case: " + err.message;
   }
 }
-
 function closeDrawer() {
   document.getElementById("drawer-overlay").classList.add("hidden");
   document.getElementById("drawer").classList.add("hidden");
@@ -1609,7 +1621,7 @@ function initSandbox() {
 // --- Sidebar navigation (Phase 1) -------------------------------------------
 // Pure layout/navigation: shows exactly one <section class="view"> at a time and
 // marks the matching sidebar item active. Does not touch any API call or data.
-const VIEW_IDS = ["overview", "cases", "compliance", "ml", "sandbox", "chaos", "replay", "reports"];
+const VIEW_IDS = ["overview", "cases", "compliance", "ml", "sandbox", "chaos", "replay", "reports", "analytics"];
 
 const VIEW_TITLES = {
   overview:   "Overview",
@@ -1620,6 +1632,7 @@ const VIEW_TITLES = {
   chaos:      "Chaos Suite",
   replay:     "Case Replay",
   reports:    "Reports",
+  analytics:  "Analytics",
 };
 
 function showView(view) {
@@ -2686,4 +2699,750 @@ document.addEventListener("DOMContentLoaded", () => {
       });
     }).observe(livePanel, { attributes: true });
   }
+});
+
+
+// =============================================================================
+// PHASE 4 — Execution panel renderer, execution status card, scheduler UI
+// =============================================================================
+
+// --- Job status badge -------------------------------------------------------
+function jobStatusBadge(status) {
+  const map = {
+    scheduled:  ["neutral",  "Scheduled"],
+    claimed:    ["info",     "Claimed"],
+    executing:  ["info",     "Executing"],
+    succeeded:  ["ok",       "Succeeded"],
+    failed:     ["bad",      "Failed"],
+    exhausted:  ["bad",      "Exhausted"],
+    cancelled:  ["neutral",  "Cancelled"],
+  };
+  const [cls, label] = map[status] || ["neutral", titleCase(status)];
+  return el("span", "badge " + cls, label);
+}
+
+// --- Execution mode badge ---------------------------------------------------
+function execModeBadge(mode) {
+  if (mode === "real_test") {
+    const b = el("span", "badge badge-exec-real", "\u26A1 Razorpay Test Mode");
+    b.title = "This attempt was executed against the real Razorpay Test API.";
+    return b;
+  }
+  const b = el("span", "badge badge-exec-sim", "Simulation");
+  b.title = "This attempt was executed via internal RNG simulation (synthetic / benchmark).";
+  return b;
+}
+
+// --- Render recovery jobs panel (in drawer) --------------------------------
+function renderExecutionPanel(jobs) {
+  const wrap = el("div", "exec-panel");
+
+  jobs.forEach((job, idx) => {
+    const card = el("div", "exec-job-card");
+
+    // Header row: attempt # + mode + status
+    const header = el("div", "exec-job-header");
+    header.appendChild(el("span", "exec-attempt-label",
+      "Attempt " + job.attempt_number + " of " + job.max_retries));
+    header.appendChild(execModeBadge(job.execution_mode));
+    header.appendChild(jobStatusBadge(job.status));
+    card.appendChild(header);
+
+    // Timing row
+    const timing = el("div", "exec-timing");
+    if (job.scheduled_at) {
+      timing.appendChild(el("span", "exec-timing-item",
+        "Scheduled: " + job.scheduled_at.replace("T", " ").slice(0, 16)));
+    }
+    if (job.executed_at) {
+      timing.appendChild(el("span", "exec-timing-item",
+        "Executed: " + job.executed_at.replace("T", " ").slice(0, 16)));
+    }
+    if (timing.childNodes.length) card.appendChild(timing);
+
+    // Outcome
+    if (job.outcome) {
+      const outcomeRow = el("div", "exec-outcome");
+      const outcomeLabel = titleCase(job.outcome.replace(/_/g, " "));
+      const outcomeCls = (job.status === "succeeded")
+        ? "exec-outcome-ok"
+        : (job.status === "failed" || job.status === "exhausted")
+          ? "exec-outcome-bad"
+          : "exec-outcome-neutral";
+      outcomeRow.appendChild(el("span", outcomeCls, outcomeLabel));
+      card.appendChild(outcomeRow);
+    }
+
+    // Real Razorpay IDs — only shown when present (real_test mode).
+    if (job.razorpay_payment_id) {
+      const idRow = el("div", "exec-id-row");
+      idRow.appendChild(el("span", "exec-id-label", "Payment ID:"));
+      idRow.appendChild(el("code", "exec-id-value", job.razorpay_payment_id));
+      card.appendChild(idRow);
+    }
+    if (job.razorpay_payment_link_id) {
+      const idRow = el("div", "exec-id-row");
+      idRow.appendChild(el("span", "exec-id-label", "Payment link ID:"));
+      idRow.appendChild(el("code", "exec-id-value", job.razorpay_payment_link_id));
+      card.appendChild(idRow);
+    }
+    if (job.payment_link_url) {
+      const linkRow = el("div", "exec-id-row");
+      linkRow.appendChild(el("span", "exec-id-label", "Customer link:"));
+      const a = el("a", "exec-link-url", job.payment_link_url);
+      a.href = job.payment_link_url;
+      a.target = "_blank";
+      a.rel = "noopener noreferrer";
+      a.title = "Opens Razorpay-hosted payment page (test mode)";
+      linkRow.appendChild(a);
+      card.appendChild(linkRow);
+    }
+
+    // Failure reason (for failed jobs only)
+    if (job.failure_reason && job.status !== "succeeded") {
+      const failRow = el("div", "exec-failure-reason");
+      failRow.appendChild(el("span", "muted", job.failure_reason));
+      card.appendChild(failRow);
+    }
+
+    wrap.appendChild(card);
+  });
+
+  return wrap;
+}
+
+// --- Execution status card (Overview) --------------------------------------
+// Loaded once after dashboard loads. Shows credential status + job summary.
+async function loadExecutionStatusCard() {
+  const card = document.getElementById("execution-status-card");
+  if (!card) return;
+  try {
+    const data = await getJSON("/api/execution/status");
+    renderExecutionStatusCard(card, data);
+    card.classList.remove("hidden");
+  } catch (e) {
+    card.classList.add("hidden");
+  }
+}
+
+function renderExecutionStatusCard(card, data) {
+  const rzp = data.razorpay || {};
+  const jobs = data.jobs || {};
+  card.innerHTML = "";
+
+  // Header
+  const head = el("div", "card-head");
+  const h2 = el("h2", "card-title", "Recovery execution");
+  head.appendChild(h2);
+
+  // Credential status badge
+  let credBadge;
+  if (rzp.authenticated) {
+    credBadge = el("span", "badge ok",
+      "\u26A1 Razorpay Test Mode " + (rzp.mode === "test" ? "(test)" : ""));
+    credBadge.title = "Real Razorpay Test API credentials are configured and verified.";
+  } else if (rzp.configured) {
+    credBadge = el("span", "badge warn", "Credentials not verified");
+    credBadge.title = rzp.error || "Keys are set but could not be verified.";
+  } else {
+    credBadge = el("span", "badge neutral", "Simulation only");
+    credBadge.title =
+      "RAZORPAY_KEY_ID / RAZORPAY_KEY_SECRET not configured. " +
+      "All recovery runs use the RNG simulation path.";
+  }
+  head.appendChild(credBadge);
+  card.appendChild(head);
+
+  // Job summary row
+  if (jobs.total > 0) {
+    const summary = el("div", "exec-summary-row");
+
+    const addStat = (label, value, cls) => {
+      const item = el("div", "exec-stat-item");
+      item.appendChild(el("span", "exec-stat-value num " + (cls || ""), String(value)));
+      item.appendChild(el("span", "exec-stat-label", label));
+      summary.appendChild(item);
+    };
+
+    addStat("Total jobs", jobs.total);
+    addStat("Scheduled", jobs.scheduled || 0);
+    addStat("Succeeded", jobs.succeeded || 0, "accent-ok");
+    if ((jobs.failed || 0) + (jobs.exhausted || 0) > 0) {
+      addStat("Failed", (jobs.failed || 0) + (jobs.exhausted || 0), "accent-bad");
+    }
+
+    // Mode breakdown
+    const byMode = jobs.by_mode || {};
+    if (byMode.real_test > 0) {
+      addStat("Real Test Mode", byMode.real_test || 0, "accent");
+    }
+    if (byMode.simulation > 0) {
+      addStat("Simulation", byMode.simulation || 0);
+    }
+
+    card.appendChild(summary);
+  } else {
+    card.appendChild(el("p", "card-sub",
+      "No recovery jobs yet. Run the agent to generate recovery attempts."));
+  }
+
+  // Limitation note when in simulation mode.
+  if (!rzp.authenticated) {
+    const note = el("div", "exec-limitation-note");
+    note.innerHTML =
+      "<strong>Simulation mode:</strong> All recovery attempts use the RNG simulation. " +
+      "To enable real Razorpay Test Mode execution, set " +
+      "<code>RAZORPAY_KEY_ID</code> and <code>RAZORPAY_KEY_SECRET</code> in <code>.env</code> " +
+      "with your Razorpay test-mode API keys.";
+    card.appendChild(note);
+  }
+}
+
+// Wire execution status load into dashboard load cycle.
+document.addEventListener("mandateRescueDashboardLoaded", () => {
+  loadExecutionStatusCard();
+});
+
+
+// =============================================================================
+// PHASE 5 — Revenue Intelligence, Risk, Anomaly, Analytics view
+// =============================================================================
+
+// ---------------------------------------------------------------------------
+// Anomaly alerts card (Overview)
+// ---------------------------------------------------------------------------
+async function loadAnomalyAlerts() {
+  const card = document.getElementById("anomaly-alerts-card");
+  if (!card) return;
+  try {
+    const data = await getJSON("/api/anomalies");
+    if (!data || !data.alerts || data.alerts.length === 0) {
+      card.classList.add("hidden");
+      return;
+    }
+    renderAnomalyAlertsCard(card, data);
+    card.classList.remove("hidden");
+  } catch (e) {
+    card.classList.add("hidden");
+  }
+}
+
+function severityBadge(sev) {
+  const map = {
+    critical: ["bad",  "Critical"],
+    warning:  ["warn", "Warning"],
+    info:     ["v2",   "Info"],
+  };
+  const [cls, label] = map[sev] || ["neutral", sev];
+  return el("span", "badge " + cls, label);
+}
+
+function renderAnomalyAlertsCard(card, data) {
+  card.innerHTML = "";
+
+  const head = el("div", "card-head");
+  const titleWrap = el("div");
+  const h2 = el("h2", "card-title");
+  h2.textContent = "Anomaly alerts";
+  titleWrap.appendChild(h2);
+  head.appendChild(titleWrap);
+  const critCount = data.alerts.filter(a => a.severity === "critical").length;
+  const badge = el("span", "badge " + (critCount > 0 ? "bad" : "warn"),
+    data.total + " alert" + (data.total !== 1 ? "s" : ""));
+  head.appendChild(badge);
+  card.appendChild(head);
+
+  const list = el("div", "anomaly-list");
+  data.alerts.slice(0, 4).forEach(alert => {
+    const row = el("div", "anomaly-row anomaly-" + alert.severity);
+    const rowHead = el("div", "anomaly-row-head");
+    rowHead.appendChild(severityBadge(alert.severity));
+    rowHead.appendChild(el("span", "anomaly-title", alert.title));
+    row.appendChild(rowHead);
+    row.appendChild(el("p", "anomaly-desc", alert.description));
+    if (alert.recommended_action) {
+      const action = el("p", "anomaly-action");
+      action.innerHTML = "<strong>Action:</strong> " + escapeHtml(alert.recommended_action);
+      row.appendChild(action);
+    }
+    list.appendChild(row);
+  });
+  card.appendChild(list);
+
+  if (data.total > 4) {
+    const more = el("p", "muted", "+" + (data.total - 4) + " more alerts. See Analytics view for full details.");
+    more.style.cssText = "margin:8px 0 0;font-size:12px;";
+    card.appendChild(more);
+  }
+}
+
+function escapeHtml(str) {
+  return String(str)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+
+// ---------------------------------------------------------------------------
+// Risk summary card (Overview)
+// ---------------------------------------------------------------------------
+async function loadRiskSummary() {
+  const card = document.getElementById("risk-summary-card");
+  if (!card) return;
+  try {
+    const data = await getJSON("/api/risk/summary?limit=5");
+    if (!data || data.active_cases === 0) {
+      card.classList.add("hidden");
+      return;
+    }
+    renderRiskSummaryCard(card, data);
+    card.classList.remove("hidden");
+  } catch (e) {
+    card.classList.add("hidden");
+  }
+}
+
+function riskScoreBadge(score) {
+  const cls = score >= 70 ? "bad" : score >= 45 ? "warn" : "v2";
+  return el("span", "badge " + cls, score + " risk");
+}
+
+function renderRiskSummaryCard(card, data) {
+  card.innerHTML = "";
+
+  const head = el("div", "card-head");
+  const titleWrap = el("div");
+  const h2 = el("h2", "card-title", "Revenue at risk");
+  titleWrap.appendChild(h2);
+  const sub = el("p", "card-sub",
+    rupees(data.total_amount_at_risk) + " across " + data.active_cases + " active cases. " +
+    "Estimated unrecovered: " + rupees(data.expected_unrecovered) + " [ESTIMATE]");
+  titleWrap.appendChild(sub);
+  head.appendChild(titleWrap);
+  head.appendChild(el("span", "badge badge-exec-sim", "Estimate"));
+  card.appendChild(head);
+
+  // Severity breakdown
+  const sev = data.summary_by_severity || {};
+  const sevRow = el("div", "risk-severity-row");
+  const sevOrder = [["critical", "bad"], ["high", "bad"], ["medium", "warn"], ["low", "v2"]];
+  sevOrder.forEach(([key, cls]) => {
+    if (!sev[key]) return;
+    const item = el("div", "risk-sev-item");
+    item.appendChild(el("span", "badge " + cls, key));
+    item.appendChild(el("span", "risk-sev-count num", String(sev[key].count)));
+    item.appendChild(el("span", "risk-sev-amt muted", rupees(sev[key].amount)));
+    sevRow.appendChild(item);
+  });
+  if (sevRow.childNodes.length) card.appendChild(sevRow);
+
+  // Top risks table
+  if (data.top_risks && data.top_risks.length > 0) {
+    const tbl = el("table", "cases-table");
+    const thead = el("thead");
+    thead.innerHTML = "<tr><th>Customer</th><th>Failure reason</th><th>Amount</th><th>Risk</th><th>Intervention</th></tr>";
+    tbl.appendChild(thead);
+    const tbody = el("tbody");
+    data.top_risks.forEach(r => {
+      const tr = el("tr");
+      tr.style.cursor = "pointer";
+      tr.addEventListener("click", () => {
+        showView("cases");
+        setTimeout(() => openDrawer(r.customer_id), 100);
+      });
+      tr.appendChild(el("td", "num", maskId(r.customer_id)));
+      const reasonTd = el("td");
+      reasonTd.appendChild(el("span", "tag reason", titleCase(r.failure_reason)));
+      tr.appendChild(reasonTd);
+      tr.appendChild(el("td", "num", rupees(r.amount)));
+      const riskTd = el("td");
+      riskTd.appendChild(riskScoreBadge(r.risk_score));
+      tr.appendChild(riskTd);
+      tr.appendChild(el("td", "muted", r.intervention_window ? r.intervention_window.label : "\u2014"));
+      tbody.appendChild(tr);
+    });
+    tbl.appendChild(tbody);
+    const wrap = el("div", "table-wrap");
+    wrap.style.marginTop = "12px";
+    wrap.appendChild(tbl);
+    card.appendChild(wrap);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Analytics view loader
+// ---------------------------------------------------------------------------
+async function loadAnalyticsView() {
+  // Load all data in parallel
+  const [failureData, strategyData, incrementalData, merchantData] = await Promise.allSettled([
+    getJSON("/api/intelligence/by-failure-reason"),
+    getJSON("/api/intelligence/by-strategy"),
+    getJSON("/api/intelligence/incremental-revenue"),
+    getJSON("/api/intelligence/merchant-learning"),
+  ]);
+
+  if (failureData.status === "fulfilled") renderByFailureReason(failureData.value);
+  if (strategyData.status === "fulfilled") renderByStrategy(strategyData.value);
+  if (incrementalData.status === "fulfilled") renderIncrementalRevenue(incrementalData.value);
+  if (merchantData.status === "fulfilled") renderMerchantLearning(merchantData.value);
+}
+
+function renderByFailureReason(data) {
+  const container = document.getElementById("by-failure-reason-body");
+  if (!container) return;
+  const rows = (data && data.by_failure_reason) || [];
+  if (!rows.length) { container.innerHTML = "<div class='view-empty muted'>No data yet.</div>"; return; }
+
+  const tbl = el("table", "cases-table");
+  tbl.innerHTML =
+    "<thead><tr>" +
+    "<th>Failure reason</th><th>Cases</th><th>Recovered</th>" +
+    "<th>Recovery rate</th><th>Model prior</th><th>Delta</th><th>Amount lost</th>" +
+    "</tr></thead>";
+  const tbody = el("tbody");
+  rows.forEach(r => {
+    const tr = el("tr");
+    tr.style.cursor = "default";
+    tr.appendChild(el("td", null, titleCase(r.segment)));
+    tr.appendChild(el("td", "num", String(r.total)));
+    tr.appendChild(el("td", "num", String(r.recovered)));
+
+    // Recovery rate with bar
+    const rateTd = el("td");
+    const rateWrap = el("div");
+    rateWrap.style.cssText = "display:flex;align-items:center;gap:8px;";
+    rateWrap.appendChild(el("span", "num", (r.recovery_rate * 100).toFixed(1) + "%"));
+    const bar = el("div", "bar");
+    bar.style.width = "60px";
+    const fill = el("span");
+    fill.style.width = (r.recovery_rate * 100).toFixed(1) + "%";
+    bar.appendChild(fill);
+    rateWrap.appendChild(bar);
+    rateTd.appendChild(rateWrap);
+    tr.appendChild(rateTd);
+
+    // Prior
+    const priorTd = el("td", "muted num",
+      r.recoverability_prior != null ? (r.recoverability_prior * 100).toFixed(0) + "%" : "\u2014");
+    priorTd.title = r.prior_label || "";
+    tr.appendChild(priorTd);
+
+    // Delta
+    const delta = r.prior_vs_actual_delta;
+    const deltaTd = el("td");
+    if (delta != null) {
+      const span = el("span", "num " + (delta >= 0 ? "accent-ok" : "accent-bad"),
+        (delta >= 0 ? "+" : "") + (delta * 100).toFixed(1) + "pp");
+      deltaTd.appendChild(span);
+    } else {
+      deltaTd.appendChild(el("span", "muted", "n/a"));
+    }
+    tr.appendChild(deltaTd);
+
+    tr.appendChild(el("td", "num accent-bad", rupees(r.amount_lost)));
+    tbody.appendChild(tr);
+  });
+  tbl.appendChild(tbody);
+  container.innerHTML = "";
+  const wrap = el("div", "table-wrap");
+  wrap.appendChild(tbl);
+  container.appendChild(wrap);
+}
+
+function renderByStrategy(data) {
+  const container = document.getElementById("by-strategy-body");
+  if (!container) return;
+  const rows = (data && data.by_strategy) || [];
+  if (!rows.length) { container.innerHTML = "<div class='view-empty muted'>No data yet.</div>"; return; }
+
+  const tbl = el("table", "cases-table");
+  tbl.innerHTML =
+    "<thead><tr>" +
+    "<th>Strategy</th><th>Cases</th><th>Recovery rate</th><th>Amount recovered</th><th>Data</th>" +
+    "</tr></thead>";
+  const tbody = el("tbody");
+  rows.forEach(r => {
+    const tr = el("tr");
+    tr.style.cursor = "default";
+    tr.appendChild(el("td", null, r.strategy));
+    tr.appendChild(el("td", "num", String(r.total)));
+
+    // Rate with colour
+    const rateCls = r.recovery_rate >= 0.8 ? "accent-ok" : r.recovery_rate >= 0.5 ? "" : "accent-bad";
+    tr.appendChild(el("td", "num " + rateCls, (r.recovery_rate * 100).toFixed(1) + "%"));
+    tr.appendChild(el("td", "num accent-ok", rupees(r.amount_recovered)));
+
+    const qualTd = el("td");
+    qualTd.appendChild(el("span",
+      r.sufficient_sample ? "badge ok" : "badge neutral",
+      r.sufficient_sample ? "Actual" : "Low sample"));
+    tr.appendChild(qualTd);
+    tbody.appendChild(tr);
+  });
+  tbl.appendChild(tbody);
+  container.innerHTML = "";
+  const wrap = el("div", "table-wrap");
+  wrap.appendChild(tbl);
+  container.appendChild(wrap);
+}
+
+function renderIncrementalRevenue(data) {
+  const container = document.getElementById("incremental-revenue-body");
+  if (!container) return;
+  if (!data || !data.actual) {
+    container.innerHTML = "<div class='view-empty muted'>No data yet.</div>";
+    return;
+  }
+
+  const grid = el("div", "incremental-grid");
+
+  const addCard = (label, amount, rate, badgeText, badgeCls, note) => {
+    const card = el("div", "incremental-card");
+    card.appendChild(el("div", "incremental-label", label));
+    card.appendChild(el("div", "incremental-amount num", rupees(amount)));
+    card.appendChild(el("div", "muted num", (rate * 100).toFixed(1) + "% recovery rate"));
+    if (badgeText) {
+      card.appendChild(el("span", "badge " + badgeCls, badgeText));
+    }
+    if (note) {
+      const noteEl = el("p", "muted", note);
+      noteEl.style.cssText = "font-size:11px;margin-top:6px;";
+      card.appendChild(noteEl);
+    }
+    grid.appendChild(card);
+  };
+
+  addCard("Actual (Mandate Rescue agent)",
+    data.actual.amount_recovered, data.actual.recovery_rate,
+    "Actual", "ok", null);
+  addCard("Dumb persistence baseline",
+    data.dumb_persistence_baseline.amount_recovered,
+    data.dumb_persistence_baseline.recovery_rate,
+    "Estimate", "warn",
+    data.dumb_persistence_baseline.label);
+  addCard("Naive baseline (1 attempt)",
+    data.naive_baseline_1_attempt.amount_recovered,
+    data.naive_baseline_1_attempt.recovery_rate,
+    "Estimate", "warn",
+    data.naive_baseline_1_attempt.label);
+
+  container.innerHTML = "";
+  container.appendChild(grid);
+
+  if (data.incremental) {
+    const inc = data.incremental;
+    const incCard = el("div", "incremental-summary");
+    incCard.innerHTML =
+      "<strong>Incremental vs dumb persistence:</strong> " +
+      "<span class='num " + (inc.vs_dumb_persistence >= 0 ? "accent-ok" : "accent-bad") + "'>" +
+      rupees(inc.vs_dumb_persistence) + "</span>" +
+      " <span class='badge badge-exec-sim'>ESTIMATE — counterfactual</span>" +
+      "<p class='muted' style='margin-top:6px;font-size:12px;'>" +
+      escapeHtml(inc.interpretation) + "</p>";
+    container.appendChild(incCard);
+  }
+}
+
+function renderMerchantLearning(data) {
+  const container = document.getElementById("merchant-learning-body");
+  if (!container) return;
+  const merchants = (data && data.merchants) || [];
+  const withData = merchants.filter(m => m.sufficient_data);
+  if (!withData.length) {
+    container.innerHTML = "<div class='view-empty muted'>Insufficient data for merchant-specific recommendations yet.</div>";
+    return;
+  }
+
+  const grid = el("div", "merchant-grid");
+  withData.forEach(m => {
+    const card = el("div", "merchant-card");
+    const h3 = el("h3", null, titleCase(m.merchant_category));
+    h3.style.cssText = "font-size:14px;margin:0 0 8px;";
+    card.appendChild(h3);
+    card.appendChild(el("p", "muted",
+      m.total_cases + " cases \u00B7 best strategy:"));
+    if (m.best_strategy) {
+      const row = el("div");
+      row.style.cssText = "display:flex;align-items:center;gap:8px;margin:4px 0 8px;";
+      row.appendChild(el("span", "tag reason", m.best_strategy));
+      row.appendChild(el("span", "num accent-ok",
+        (m.best_strategy_recovery_rate * 100).toFixed(1) + "%"));
+      row.appendChild(el("span", "muted", "n=" + m.best_strategy_sample));
+      card.appendChild(row);
+    }
+    if (m.recommendation) {
+      const rec = el("p", null);
+      rec.style.cssText = "font-size:12px;color:var(--text-secondary);line-height:1.5;";
+      rec.textContent = m.recommendation;
+      card.appendChild(rec);
+    }
+    grid.appendChild(card);
+  });
+  container.innerHTML = "";
+  container.appendChild(grid);
+}
+
+// ---------------------------------------------------------------------------
+// Revenue Investigator
+// ---------------------------------------------------------------------------
+async function runInvestigate(question) {
+  const result = document.getElementById("investigate-result");
+  if (!result) return;
+  result.classList.remove("hidden");
+  result.innerHTML = "<div class='ask-loading'><span class='spinner'></span>Investigating\u2026</div>";
+
+  try {
+    const r = await fetch("/api/investigate", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ question }),
+    });
+    const data = await r.json();
+    renderInvestigateResult(result, question, data);
+  } catch (e) {
+    result.innerHTML = "<div class='ask-empty'>Investigation failed: " + e.message + "</div>";
+  }
+}
+
+function renderInvestigateResult(container, question, data) {
+  container.innerHTML = "";
+
+  if (!data.ok && data.question_type === "unknown") {
+    container.appendChild(el("div", "ask-empty", data.answer));
+    return;
+  }
+
+  // Summary answer
+  const answerBlock = el("div", "investigate-answer");
+  const answerText = el("p", null, data.answer);
+  answerText.style.cssText = "font-size:14px;margin:0 0 8px;color:var(--text-primary);";
+  answerBlock.appendChild(answerText);
+
+  // Data type badge
+  const dtBadge = data.data_type === "actual"
+    ? el("span", "badge ok", "Actual data")
+    : data.data_type === "mixed"
+      ? el("span", "badge warn", "Mixed: actual + estimate")
+      : el("span", "badge neutral", "Estimate");
+  answerBlock.appendChild(dtBadge);
+  container.appendChild(answerBlock);
+
+  // Recommendation
+  if (data.recommendation) {
+    const recBlock = el("div", "investigate-recommendation");
+    recBlock.innerHTML =
+      "<strong>Recommended action:</strong> " + escapeHtml(data.recommendation);
+    container.appendChild(recBlock);
+  }
+
+  // Evidence section (collapsible)
+  if (data.evidence && Object.keys(data.evidence).length > 0) {
+    const evSection = el("div", "investigate-evidence");
+    const evTitle = el("div", "section-title", "Supporting evidence");
+    evSection.appendChild(evTitle);
+
+    // Render alert list if present
+    const alerts = data.evidence.alerts;
+    if (Array.isArray(alerts) && alerts.length > 0) {
+      alerts.slice(0, 3).forEach(alert => {
+        const row = el("div", "anomaly-row anomaly-" + alert.severity);
+        row.style.marginBottom = "8px";
+        const rh = el("div", "anomaly-row-head");
+        rh.appendChild(severityBadge(alert.severity));
+        rh.appendChild(el("span", "anomaly-title", alert.title));
+        row.appendChild(rh);
+        row.appendChild(el("p", "anomaly-desc", alert.description));
+        evSection.appendChild(row);
+      });
+    }
+
+    // Render tabular data if present
+    const byReason = data.evidence.by_failure_reason;
+    if (Array.isArray(byReason) && byReason.length > 0) {
+      const tbl = el("table", "cases-table");
+      tbl.innerHTML = "<thead><tr><th>Reason</th><th>Rate</th><th>Lost</th></tr></thead>";
+      const tb = el("tbody");
+      byReason.slice(0, 4).forEach(r => {
+        const tr = el("tr");
+        tr.style.cursor = "default";
+        tr.appendChild(el("td", null, titleCase(r.segment || r.failure_reason || "")));
+        tr.appendChild(el("td", "num", (r.recovery_rate * 100).toFixed(1) + "%"));
+        tr.appendChild(el("td", "num accent-bad", rupees(r.amount_lost || 0)));
+        tb.appendChild(tr);
+      });
+      tbl.appendChild(tb);
+      const wrap = el("div", "table-wrap");
+      wrap.style.marginTop = "8px";
+      wrap.appendChild(tbl);
+      evSection.appendChild(wrap);
+    }
+
+    container.appendChild(evSection);
+  }
+
+  // Results table if present (from filtered query)
+  if (data.results && data.results.length > 0) {
+    const sec = el("div");
+    sec.appendChild(el("div", "section-title",
+      data.results.length + " matching cases"));
+    // Reuse the existing ask-result table style via a mini table
+    const tbl = el("table", "cases-table");
+    tbl.innerHTML =
+      "<thead><tr><th>Customer</th><th>Amount</th><th>Status</th></tr></thead>";
+    const tb = el("tbody");
+    data.results.slice(0, 8).forEach(r => {
+      const tr = el("tr");
+      tr.addEventListener("click", () => openDrawer(r.customer_id));
+      tr.appendChild(el("td", "num", maskId(r.customer_id)));
+      tr.appendChild(el("td", "num", rupees(r.amount)));
+      tr.appendChild(el("td", "status " + r.case_status, titleCase(r.case_status)));
+      tb.appendChild(tr);
+    });
+    tbl.appendChild(tb);
+    const wrap = el("div", "table-wrap");
+    wrap.appendChild(tbl);
+    sec.appendChild(wrap);
+    container.appendChild(sec);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Wire Phase 5 into existing load cycle
+// ---------------------------------------------------------------------------
+document.addEventListener("mandateRescueDashboardLoaded", () => {
+  // Overview cards — load in background after main dashboard data
+  loadAnomalyAlerts();
+  loadRiskSummary();
+});
+
+// Wire Investigator chips and input — added in Phase 5 init extension
+document.addEventListener("DOMContentLoaded", () => {
+  // Analytics nav click → lazy load
+  document.querySelectorAll(".nav-item[data-view='analytics']").forEach(item => {
+    item.addEventListener("click", () => {
+      if (!_analyticsLoaded) { _analyticsLoaded = true; loadAnalyticsView(); }
+    });
+  });
+  // Investigator input wiring
+  const investigateBtn = document.getElementById("investigate-btn");
+  const investigateInput = document.getElementById("investigate-input");
+  if (investigateBtn && investigateInput) {
+    investigateBtn.addEventListener("click", () => {
+      const q = investigateInput.value.trim();
+      if (q) runInvestigate(q);
+    });
+    investigateInput.addEventListener("keydown", e => {
+      if (e.key === "Enter") {
+        const q = investigateInput.value.trim();
+        if (q) runInvestigate(q);
+      }
+    });
+  }
+  document.querySelectorAll("#investigate-chips .chip").forEach(chip => {
+    chip.addEventListener("click", () => {
+      if (investigateInput) investigateInput.value = chip.dataset.q;
+      runInvestigate(chip.dataset.q);
+    });
+  });
 });

@@ -50,6 +50,25 @@ def _load_model():
     return _model
 
 
+def _eager_load():
+    """Trigger model load + pandas import at module load time.
+
+    Called once at the bottom of this file so the first /api/cases request
+    doesn't absorb a 3-second cold-start penalty for pandas and sklearn.
+    Runs in a background thread so it never blocks the Flask startup sequence.
+    The lazy lock in _load_model() ensures this is safe even if the background
+    thread hasn't finished by the time the first request arrives.
+    """
+    import threading as _t
+    def _do():
+        try:
+            import pandas  # warm up pandas import
+            _load_model()
+        except Exception:
+            pass
+    _t.Thread(target=_do, daemon=True).start()
+
+
 def model_available():
     """True if a trained model artifact is loaded and ready for inference."""
     return _load_model() is not None
@@ -96,3 +115,45 @@ def predict_recovery_probability(case):
         return round(float(proba), 4)
     except Exception:
         return None
+
+
+def predict_batch(cases):
+    """Batch-predict P(recovered) for a list of case dicts.
+
+    Returns a list of floats (or None values) in the same order as ``cases``.
+    This is far faster than calling predict_recovery_probability() N times because
+    it creates one DataFrame and runs a single model.predict_proba() call, avoiding
+    N × (DataFrame construction + sklearn inference overhead).
+
+    Callers that need all 180 cases scored (e.g. /api/cases) should use this instead
+    of the per-case variant to stay inside a sensible latency budget.
+    """
+    model = _load_model()
+    if model is None:
+        return [None] * len(cases)
+    if not cases:
+        return []
+    try:
+        import pandas as pd
+        rows = [
+            {
+                "past_payment_success_rate": float(c.get("past_payment_success_rate", 0.0)),
+                "customer_tenure_months": float(c.get("customer_tenure_months", 0)),
+                "past_retry_count": float(c.get("past_retry_count", 0)),
+                "amount": float(c.get("amount", 0.0)),
+                "mandate_limit": float(c.get("mandate_limit") or 5000),
+                "failure_reason": c.get("failure_reason", ""),
+                "merchant_category": c.get("merchant_category", ""),
+            }
+            for c in cases
+        ]
+        X = pd.DataFrame(rows, columns=FEATURES)
+        probas = model.predict_proba(X)[:, 1]
+        return [round(float(p), 4) for p in probas]
+    except Exception:
+        return [None] * len(cases)
+
+
+# Kick off background model + pandas warm-up so the first /api/cases request
+# doesn't absorb the cold-start cost.
+_eager_load()
