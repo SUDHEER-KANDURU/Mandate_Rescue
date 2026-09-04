@@ -1204,9 +1204,21 @@ async function runAgentLive() {
 
   let resp;
   try {
-    resp = await fetch("/api/run-agent-stream", {
+    // Obtain a one-use SSE token (gated by X-API-Key) before opening the stream.
+    // The browser EventSource API cannot send custom headers, so the stream URL
+    // carries a short-lived token instead of the master API key.
+    const tokenResp = await fetch("/api/run-agent-stream-token", {
+      method: "POST",
       headers: _apiKey ? { "X-API-Key": _apiKey } : {},
     });
+    if (!tokenResp.ok) {
+      banner("Authentication failed — check your API key.", true);
+      live.classList.add("hidden");
+      runBtn.disabled = false; resetBtn.disabled = false;
+      return;
+    }
+    const { token } = await tokenResp.json();
+    resp = await fetch(`/api/run-agent-stream?token=${encodeURIComponent(token)}`);
   } catch (err) {
     // The run request itself never connected. Surface it and re-enable the buttons
     // rather than leaving the UI stuck on "Running…".

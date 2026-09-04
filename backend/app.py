@@ -7,6 +7,9 @@ from real mandate_failures / audit_log rows via metrics.py and baseline.py (N1).
 import json
 import logging
 import os
+import secrets
+import threading
+import time
 import uuid
 
 # Load a local .env (project root) into os.environ so GROQ_API_KEY / WEBHOOK_SECRET
@@ -69,6 +72,10 @@ import baseline
 import export as export_module
 import simulation_runner
 import health as health_module
+import rate_limit as rate_limit_module
+import config as config_module
+import auth as auth_module
+import email_service as email_svc_module
 # Additive ML validation/research layer. Imported defensively so the app still runs
 # if the model has not been trained yet (predict.* degrade to "unavailable").
 from ml import predict as ml_predict
@@ -114,6 +121,18 @@ app = Flask(
 # payloads (a real Razorpay webhook is a few KB at most; 1 MB is very generous).
 app.config["MAX_CONTENT_LENGTH"] = 1 * 1024 * 1024  # 1 MB
 
+# Flask secret key for signing session cookies.
+# Loaded from env (FLASK_SECRET_KEY). If unset in dev, a random per-process
+# key is used (sessions won't survive restarts — acceptable for dev only).
+app.secret_key = os.environ.get("FLASK_SECRET_KEY") or secrets.token_hex(32)
+
+# Log startup configuration (safe summary, no secrets).
+config_module.log_startup_config()
+
+# Reset email service singleton so it picks up the fully-loaded .env credentials.
+# dotenv runs above this line, so SMTP_USERNAME/PASSWORD are in os.environ by now.
+email_svc_module.reset_email_service()
+
 # Security: the ONLY filter fields the natural-language query endpoint will honor.
 # The LLM may return anything; every key is validated against this hardcoded set
 # before any query is built, and off-list keys are dropped silently. This is a
@@ -124,7 +143,8 @@ app.config["MAX_CONTENT_LENGTH"] = 1 * 1024 * 1024  # 1 MB
 # it only stops the endpoint from silently dropping filters the engine supports
 # (e.g. "cases over the mandate limit" -> over_limit).
 ASK_FIELD_WHITELIST = frozenset({
-    "compliance_status", "health_band", "failure_reason", "case_status",
+    "failure_reason", "merchant_category", "compliance_status", "health_band",
+    "case_status",
     "amount_min", "amount_max",
     "over_limit", "score_min", "score_max", "dunning_stage_min", "sort_by_amount",
 })
@@ -137,19 +157,68 @@ ASK_FIELD_WHITELIST = frozenset({
 # is different, and gating every read would break simple curl-based judge exploration
 # for no security benefit. See backend/security.py for the key model.
 _PROTECTED_PATHS = frozenset({
-    "/api/seed", "/api/run-agent", "/api/run-agent-stream", "/api/reset", "/api/simulate",
-    # These are read-only but trigger heavy compute (full DB scans, audit recomputation,
-    # or adversarial simulation suites). Gating them prevents unauthenticated abuse.
+    "/api/seed", "/api/run-agent", "/api/run-agent-stream-token", "/api/reset", "/api/simulate",
+    # These are read-only but trigger heavy compute.
     "/api/audit-check", "/api/chaos-test",
     # Phase 4: scheduler worker trigger and job cancellation are mutating.
     "/api/scheduler/run", "/api/scheduler/jobs/cancel",
 })
+
+# ---------------------------------------------------------------------------
+# Short-lived SSE stream tokens
+# ---------------------------------------------------------------------------
+# The browser's native EventSource cannot attach arbitrary headers, so
+# /api/run-agent-stream cannot use the X-API-Key gate directly.
+# Instead: the UI first POSTs to /api/run-agent-stream-token (which IS gated)
+# to receive a one-use, 60-second token. The SSE URL then carries that token
+# as ?token=<value>. We store tokens in a small in-memory dict; expired tokens
+# are pruned on each validation call. This never stores the master API key in
+# the URL — only a short-lived single-use opaque token.
+_SSE_TOKENS: dict = {}          # token -> expires_at (epoch float)
+_SSE_TOKEN_TTL = 60             # seconds a token is valid
+_sse_token_lock = threading.Lock()
 
 
 @app.before_request
 def _assign_correlation_id():
     """Assign a unique correlation ID to each request for log tracing."""
     g.correlation_id = request.headers.get("X-Correlation-ID") or str(uuid.uuid4())[:8]
+
+
+@app.before_request
+def _resolve_merchant_session():
+    """Resolve the session cookie to a merchant on every request.
+
+    Sets g.merchant (dict or None) and g.session_id (str or None).
+    Auth-required routes call _require_auth() which checks g.merchant.
+    """
+    g.merchant    = None
+    g.session_id  = None
+    session_id = request.cookies.get(auth_module.SESSION_COOKIE_NAME)
+    if session_id:
+        conn = db.get_connection()
+        try:
+            g.merchant   = auth_module.resolve_session(conn, session_id)
+            g.session_id = session_id if g.merchant else None
+        except Exception:
+            pass
+        finally:
+            conn.close()
+
+
+# Ensure schema is current on the real DB (migrations are idempotent).
+_db_initialized = False
+
+
+@app.before_request
+def _ensure_db_initialized():
+    global _db_initialized
+    if not _db_initialized:
+        _db_initialized = True
+        try:
+            db.init_db()
+        except Exception as exc:
+            app.logger.warning("DB init on startup failed: %s", exc)
 
 
 # Phase 4: reset any jobs stuck in 'claimed'/'executing' on first request after
@@ -251,7 +320,628 @@ def healthz():
 
 @app.route("/")
 def index():
-    return render_template("index.html")
+    # Serve login page if not authenticated; dashboard if authenticated.
+    if g.merchant:
+        return render_template("index.html")
+    return render_template("login.html")
+
+
+# ---------------------------------------------------------------------------
+# Auth helpers
+# ---------------------------------------------------------------------------
+
+def _require_auth():
+    """Return (merchant, None) if authenticated, else (None, 401-response)."""
+    if not g.merchant:
+        return None, (jsonify({"ok": False, "error": "unauthorized",
+                               "message": "Authentication required."}), 401)
+    return g.merchant, None
+
+
+def _rl_check(endpoint: str):
+    """Rate-limit check helper. Returns 429 response on block, else None."""
+    allowed, info = rate_limit_module.flask_check(endpoint, request)
+    if not allowed:
+        return jsonify({
+            "ok": False, "error": "rate_limited",
+            "message": (f"Too many requests. Retry in "
+                        f"{info.get('reset_after_seconds', 60)}s."),
+        }), 429
+    return None
+
+
+def _set_session_cookie(response, session_id: str):
+    """Attach the session cookie (HttpOnly, SameSite=Lax, 7-day max-age)."""
+    response.set_cookie(
+        auth_module.SESSION_COOKIE_NAME,
+        value=session_id,
+        max_age=auth_module.SESSION_TTL_DAYS * 86400,
+        httponly=True,
+        samesite="Lax",
+        secure=False,   # set True behind HTTPS in production
+    )
+    return response
+
+
+def _clear_session_cookie(response):
+    """Remove the session cookie."""
+    response.delete_cookie(auth_module.SESSION_COOKIE_NAME,
+                            samesite="Lax", httponly=True)
+    return response
+
+
+# ---------------------------------------------------------------------------
+# Authentication routes — no existing API-key protection (separate system)
+# ---------------------------------------------------------------------------
+
+@app.route("/register")
+def register_page():
+    if g.merchant:
+        return render_template("index.html")
+    return render_template("register.html")
+
+
+@app.route("/verify-email")
+def verify_email_page():
+    return render_template("verify_email.html")
+
+
+@app.route("/forgot-password")
+def forgot_password_page():
+    return render_template("forgot_password.html")
+
+
+@app.route("/api/auth/register", methods=["POST"])
+def api_auth_register():
+    """Create a new merchant account (pending email verification)."""
+    rl = _rl_check("/api/auth/register")
+    if rl:
+        return rl
+
+    data = request.get_json(silent=True) or {}
+    conn = db.get_connection()
+    try:
+        merchant_id, otp = auth_module.register_merchant(conn, data)
+    except auth_module.RegistrationError as exc:
+        return jsonify({"ok": False, "error": "validation_error",
+                        "message": str(exc)}), 400
+    finally:
+        conn.close()
+
+    # Send OTP email (non-blocking — failure doesn't roll back registration)
+    email = (data.get("email") or "").strip().lower()
+    full_name = (data.get("full_name") or "").strip()
+    conn2 = db.get_connection()
+    try:
+        result = email_svc_module.get_email_service().send_registration_otp(
+            conn2, email, full_name, otp, merchant_id=merchant_id)
+        conn2.commit()
+    except Exception as exc:
+        app.logger.error("Failed to send registration OTP email: %s", exc)
+        result = None
+    finally:
+        conn2.close()
+
+    email_status = result.status if result else "error"
+    return jsonify({
+        "ok": True,
+        "merchant_id": merchant_id,
+        "email": email,
+        "message": (
+            "Account created. Check your email for a 6-digit verification code."
+            if email_status in ("SENT", "SIMULATED") else
+            "Account created, but we could not send the verification email. "
+            "Please use 'Resend OTP' to try again."
+        ),
+        "email_delivery": email_status,
+    }), 201
+
+
+@app.route("/api/auth/verify-email", methods=["POST"])
+def api_auth_verify_email():
+    """Verify registration OTP and activate account."""
+    rl = _rl_check("/api/auth/verify-email")
+    if rl:
+        return rl
+
+    data = request.get_json(silent=True) or {}
+    email = (data.get("email") or "").strip().lower()
+    otp   = (data.get("otp") or "").strip()
+    if not email or not otp:
+        return jsonify({"ok": False, "error": "missing_fields",
+                        "message": "Email and OTP are required."}), 400
+
+    conn = db.get_connection()
+    try:
+        merchant_id = auth_module.verify_registration_otp(
+            conn, email, otp,
+            ip=auth_module._client_ip(request),
+            ua=auth_module._client_ua(request),
+        )
+    except auth_module.OTPError as exc:
+        return jsonify({"ok": False, "error": exc.code,
+                        "message": exc.message}), 400
+    finally:
+        conn.close()
+
+    return jsonify({"ok": True, "message": "Email verified. You can now log in.",
+                    "merchant_id": merchant_id})
+
+
+@app.route("/api/auth/resend-otp", methods=["POST"])
+def api_auth_resend_otp():
+    """Resend registration OTP (with cooldown)."""
+    rl = _rl_check("/api/auth/resend-otp")
+    if rl:
+        return rl
+
+    data  = request.get_json(silent=True) or {}
+    email = (data.get("email") or "").strip().lower()
+    if not email:
+        return jsonify({"ok": False, "message": "Email is required."}), 400
+
+    conn = db.get_connection()
+    try:
+        merchant_id, otp = auth_module.resend_registration_otp(conn, email)
+    except auth_module.OTPError as exc:
+        return jsonify({"ok": False, "error": exc.code,
+                        "message": exc.message}), 400
+    finally:
+        conn.close()
+
+    # Send fresh OTP
+    merchant = None
+    conn2 = db.get_connection()
+    try:
+        merchant = db.get_merchant_by_email(conn2, email)
+        full_name = merchant["full_name"] if merchant else "there"
+        result = email_svc_module.get_email_service().send_registration_otp(
+            conn2, email, full_name, otp, merchant_id=merchant_id)
+        conn2.commit()
+    except Exception as exc:
+        app.logger.error("Resend OTP email failed: %s", exc)
+        result = None
+    finally:
+        conn2.close()
+
+    return jsonify({
+        "ok": True,
+        "message": "A new verification code has been sent to your email.",
+        "email_delivery": result.status if result else "error",
+    })
+
+
+@app.route("/api/auth/login", methods=["POST"])
+def api_auth_login():
+    """Authenticate merchant and create a 7-day session."""
+    rl = _rl_check("/api/auth/login")
+    if rl:
+        return rl
+
+    data     = request.get_json(silent=True) or {}
+    email    = (data.get("email") or "").strip()
+    password = data.get("password", "")
+    ip       = auth_module._client_ip(request)
+    ua       = auth_module._client_ua(request)
+
+    conn = db.get_connection()
+    try:
+        merchant_id, session_id = auth_module.login_merchant(
+            conn, email, password, ip=ip, ua=ua)
+        merchant = db.get_merchant_by_id(conn, merchant_id)
+    except auth_module.LoginError as exc:
+        return jsonify({"ok": False, "error": "auth_failed",
+                        "message": str(exc)}), 401
+    finally:
+        conn.close()
+
+    # Optional: send login alert (fire-and-forget, do not block login)
+    if merchant and data.get("send_login_alert", False):
+        conn2 = db.get_connection()
+        try:
+            email_svc_module.get_email_service().send_login_alert(
+                conn2, merchant["email"], merchant["full_name"],
+                ip, ua, merchant_id=merchant_id)
+            conn2.commit()
+        except Exception:
+            pass
+        finally:
+            conn2.close()
+
+    resp = jsonify({
+        "ok": True,
+        "merchant": auth_module._public_merchant(merchant),
+        "message": "Login successful.",
+    })
+    _set_session_cookie(resp, session_id)
+    return resp
+
+
+@app.route("/api/auth/logout", methods=["POST"])
+def api_auth_logout():
+    """Invalidate the current session."""
+    merchant, err = _require_auth()
+    if err:
+        return err
+
+    conn = db.get_connection()
+    try:
+        auth_module.logout(conn, g.session_id,
+                           merchant_id=merchant["merchant_id"],
+                           ip=auth_module._client_ip(request),
+                           ua=auth_module._client_ua(request))
+    finally:
+        conn.close()
+
+    resp = jsonify({"ok": True, "message": "Logged out successfully."})
+    _clear_session_cookie(resp)
+    return resp
+
+
+@app.route("/api/auth/me")
+def api_auth_me():
+    """Return the currently authenticated merchant's public profile."""
+    merchant, err = _require_auth()
+    if err:
+        return err
+    return jsonify({"ok": True, "merchant": auth_module._public_merchant(merchant)})
+
+
+@app.route("/api/auth/forgot-password", methods=["POST"])
+def api_auth_forgot_password():
+    """Request a password-reset OTP (always returns 200 to avoid enumeration)."""
+    rl = _rl_check("/api/auth/forgot-password")
+    if rl:
+        return rl
+
+    data  = request.get_json(silent=True) or {}
+    email = (data.get("email") or "").strip().lower()
+
+    GENERIC_MSG = ("If that email is registered and verified, "
+                   "a reset code has been sent.")
+
+    if not email:
+        return jsonify({"ok": True, "message": GENERIC_MSG})
+
+    conn = db.get_connection()
+    result_tuple = None
+    merchant = None
+    try:
+        result_tuple = auth_module.request_password_reset(conn, email)
+        if result_tuple:
+            merchant = db.get_merchant_by_email(conn, email)
+    finally:
+        conn.close()
+
+    if result_tuple and merchant:
+        _, otp = result_tuple
+        conn2 = db.get_connection()
+        try:
+            email_svc_module.get_email_service().send_password_reset_otp(
+                conn2, email, merchant["full_name"], otp,
+                merchant_id=merchant["merchant_id"])
+            conn2.commit()
+        except Exception as exc:
+            app.logger.error("Password reset email failed: %s", exc)
+        finally:
+            conn2.close()
+
+    return jsonify({"ok": True, "message": GENERIC_MSG})
+
+
+@app.route("/api/auth/reset-password", methods=["POST"])
+def api_auth_reset_password():
+    """Verify password-reset OTP and set new password."""
+    rl = _rl_check("/api/auth/reset-password")
+    if rl:
+        return rl
+
+    data         = request.get_json(silent=True) or {}
+    email        = (data.get("email") or "").strip().lower()
+    otp          = (data.get("otp") or "").strip()
+    new_password = data.get("new_password", "")
+
+    if not email or not otp or not new_password:
+        return jsonify({"ok": False, "message": "Email, OTP and new password are required."}), 400
+
+    conn = db.get_connection()
+    try:
+        auth_module.reset_password(
+            conn, email, otp, new_password,
+            ip=auth_module._client_ip(request),
+            ua=auth_module._client_ua(request),
+        )
+    except (auth_module.OTPError, auth_module.RegistrationError) as exc:
+        msg = exc.message if hasattr(exc, "message") else str(exc)
+        return jsonify({"ok": False, "error": "otp_error", "message": msg}), 400
+    finally:
+        conn.close()
+
+    return jsonify({"ok": True,
+                    "message": "Password has been reset. You can now log in."})
+
+
+# ---------------------------------------------------------------------------
+# Profile routes (require authentication)
+# ---------------------------------------------------------------------------
+
+@app.route("/api/profile", methods=["GET"])
+def api_profile_get():
+    """Return full merchant profile."""
+    merchant, err = _require_auth()
+    if err:
+        return err
+    conn = db.get_connection()
+    try:
+        prefs = db.get_or_create_notification_prefs(conn, merchant["merchant_id"])
+        conn.commit()
+        events = db.get_security_events(conn, merchant["merchant_id"], limit=20)
+        notifs = db.get_notification_records(conn, merchant["merchant_id"], limit=20)
+    finally:
+        conn.close()
+    return jsonify({
+        "ok": True,
+        "merchant": auth_module._public_merchant(merchant),
+        "notification_preferences": prefs,
+        "recent_security_events": events,
+        "recent_notifications": notifs,
+    })
+
+
+@app.route("/api/profile", methods=["PATCH"])
+def api_profile_update():
+    """Update allowed profile fields."""
+    merchant, err = _require_auth()
+    if err:
+        return err
+
+    data = request.get_json(silent=True) or {}
+    ALLOWED = {
+        "full_name", "phone", "country",
+        "address_line1", "address_line2", "city", "state_region", "postal_code",
+        "business_name", "business_type", "business_website", "business_address",
+    }
+    updates = {k: v for k, v in data.items() if k in ALLOWED}
+    if not updates:
+        return jsonify({"ok": False, "message": "No updatable fields provided."}), 400
+
+    # Validate full_name if provided
+    if "full_name" in updates:
+        if not str(updates["full_name"]).strip():
+            return jsonify({"ok": False, "message": "Full name cannot be empty."}), 400
+        updates["full_name"] = str(updates["full_name"]).strip()[:120]
+
+    conn = db.get_connection()
+    try:
+        db.update_merchant(conn, merchant["merchant_id"], **updates)
+        db.log_security_event(conn, merchant["merchant_id"], "profile_updated",
+                               ip_address=auth_module._client_ip(request),
+                               detail=f"Fields updated: {', '.join(updates.keys())}")
+        conn.commit()
+        updated = db.get_merchant_by_id(conn, merchant["merchant_id"])
+    finally:
+        conn.close()
+
+    return jsonify({"ok": True,
+                    "merchant": auth_module._public_merchant(updated),
+                    "message": "Profile updated."})
+
+
+@app.route("/api/profile/change-email/request", methods=["POST"])
+def api_change_email_request():
+    """Request OTP to verify a new email address."""
+    rl = _rl_check("/api/auth/change-email/request")
+    if rl:
+        return rl
+    merchant, err = _require_auth()
+    if err:
+        return err
+
+    data      = request.get_json(silent=True) or {}
+    new_email = (data.get("new_email") or "").strip().lower()
+    if not new_email:
+        return jsonify({"ok": False, "message": "new_email is required."}), 400
+
+    conn = db.get_connection()
+    try:
+        new_email_out, otp = auth_module.request_change_email_otp(
+            conn, merchant["merchant_id"], new_email)
+    except auth_module.RegistrationError as exc:
+        return jsonify({"ok": False, "message": str(exc)}), 400
+    finally:
+        conn.close()
+
+    conn2 = db.get_connection()
+    try:
+        email_svc_module.get_email_service().send_change_email_otp(
+            conn2, new_email_out, merchant["full_name"], otp,
+            merchant_id=merchant["merchant_id"])
+        conn2.commit()
+    except Exception as exc:
+        app.logger.error("Change-email OTP send failed: %s", exc)
+    finally:
+        conn2.close()
+
+    return jsonify({"ok": True,
+                    "message": "A verification code has been sent to the new email address."})
+
+
+@app.route("/api/profile/change-email/confirm", methods=["POST"])
+def api_change_email_confirm():
+    """Confirm email change with OTP."""
+    rl = _rl_check("/api/auth/change-email/confirm")
+    if rl:
+        return rl
+    merchant, err = _require_auth()
+    if err:
+        return err
+
+    data      = request.get_json(silent=True) or {}
+    new_email = (data.get("new_email") or "").strip().lower()
+    otp       = (data.get("otp") or "").strip()
+    if not new_email or not otp:
+        return jsonify({"ok": False, "message": "new_email and otp are required."}), 400
+
+    conn = db.get_connection()
+    try:
+        auth_module.confirm_change_email(
+            conn, merchant["merchant_id"], new_email, otp,
+            ip=auth_module._client_ip(request),
+            ua=auth_module._client_ua(request),
+        )
+        updated = db.get_merchant_by_id(conn, merchant["merchant_id"])
+    except (auth_module.OTPError, auth_module.RegistrationError) as exc:
+        msg = exc.message if hasattr(exc, "message") else str(exc)
+        return jsonify({"ok": False, "message": msg}), 400
+    finally:
+        conn.close()
+
+    return jsonify({"ok": True,
+                    "merchant": auth_module._public_merchant(updated),
+                    "message": "Email address updated successfully."})
+
+
+@app.route("/api/profile/change-password/request", methods=["POST"])
+def api_change_password_request():
+    """Issue OTP to the merchant's email for password-change flow."""
+    rl = _rl_check("/api/auth/change-password/request")
+    if rl:
+        return rl
+    merchant, err = _require_auth()
+    if err:
+        return err
+
+    conn = db.get_connection()
+    try:
+        email, otp = auth_module.request_change_password_otp(
+            conn, merchant["merchant_id"])
+    except (auth_module.OTPError, auth_module.LoginError) as exc:
+        msg = exc.message if hasattr(exc, "message") else str(exc)
+        return jsonify({"ok": False, "message": msg}), 400
+    finally:
+        conn.close()
+
+    conn2 = db.get_connection()
+    try:
+        email_svc_module.get_email_service().send_change_password_otp(
+            conn2, email, merchant["full_name"], otp,
+            merchant_id=merchant["merchant_id"])
+        conn2.commit()
+    except Exception as exc:
+        app.logger.error("Change-password OTP send failed: %s", exc)
+    finally:
+        conn2.close()
+
+    return jsonify({"ok": True,
+                    "message": "A verification code has been sent to your email."})
+
+
+@app.route("/api/profile/change-password/confirm", methods=["POST"])
+def api_change_password_confirm():
+    """Verify OTP and update password."""
+    rl = _rl_check("/api/auth/change-password/confirm")
+    if rl:
+        return rl
+    merchant, err = _require_auth()
+    if err:
+        return err
+
+    data         = request.get_json(silent=True) or {}
+    otp          = (data.get("otp") or "").strip()
+    new_password = data.get("new_password", "")
+    confirm      = data.get("confirm_password", "")
+
+    if not otp or not new_password:
+        return jsonify({"ok": False, "message": "OTP and new password are required."}), 400
+
+    conn = db.get_connection()
+    try:
+        auth_module.change_password(
+            conn, merchant["merchant_id"], otp, new_password, confirm,
+            current_session_id=g.session_id,
+            ip=auth_module._client_ip(request),
+            ua=auth_module._client_ua(request),
+        )
+    except (auth_module.OTPError, auth_module.RegistrationError) as exc:
+        msg = exc.message if hasattr(exc, "message") else str(exc)
+        return jsonify({"ok": False, "message": msg}), 400
+    finally:
+        conn.close()
+
+    return jsonify({"ok": True,
+                    "message": "Password changed successfully. Other sessions have been signed out."})
+
+
+@app.route("/api/profile/notification-preferences", methods=["GET"])
+def api_notif_prefs_get():
+    merchant, err = _require_auth()
+    if err:
+        return err
+    conn = db.get_connection()
+    try:
+        prefs = db.get_or_create_notification_prefs(conn, merchant["merchant_id"])
+        conn.commit()
+    finally:
+        conn.close()
+    return jsonify({"ok": True, "preferences": prefs})
+
+
+@app.route("/api/profile/notification-preferences", methods=["PATCH"])
+def api_notif_prefs_update():
+    merchant, err = _require_auth()
+    if err:
+        return err
+
+    data = request.get_json(silent=True) or {}
+    conn = db.get_connection()
+    try:
+        db.update_notification_prefs(conn, merchant["merchant_id"], **data)
+        db.log_security_event(conn, merchant["merchant_id"],
+                               "notification_pref_changed",
+                               ip_address=auth_module._client_ip(request))
+        conn.commit()
+        prefs = db.get_or_create_notification_prefs(conn, merchant["merchant_id"])
+    finally:
+        conn.close()
+    return jsonify({"ok": True, "preferences": prefs,
+                    "message": "Notification preferences updated."})
+
+
+@app.route("/api/profile/security-events")
+def api_security_events():
+    merchant, err = _require_auth()
+    if err:
+        return err
+    conn = db.get_connection()
+    try:
+        events = db.get_security_events(conn, merchant["merchant_id"], limit=50)
+    finally:
+        conn.close()
+    return jsonify({"ok": True, "events": events})
+
+
+@app.route("/api/profile/send-test-email", methods=["POST"])
+def api_send_test_email():
+    """Send a test email to the authenticated merchant."""
+    merchant, err = _require_auth()
+    if err:
+        return err
+    conn = db.get_connection()
+    try:
+        result = email_svc_module.get_email_service().send_test_email(
+            conn, merchant["email"], merchant["full_name"],
+            merchant_id=merchant["merchant_id"])
+        conn.commit()
+    finally:
+        conn.close()
+    return jsonify({
+        "ok": True,
+        "status": result.status,
+        "provider": result.provider,
+        "message": (f"Test email sent via {result.provider}."
+                    if result.status == "SENT" else
+                    f"Test email {result.status.lower()} (provider: {result.provider})."),
+    })
 
 
 @app.route("/api/seed", methods=["POST"])
@@ -264,6 +954,12 @@ def api_seed():
 @app.route("/api/run-agent", methods=["POST"])
 def api_run_agent():
     """Run the recovery agent over all seeded cases."""
+    allowed, rl_info = rate_limit_module.flask_check("/api/run-agent", request)
+    if not allowed:
+        return jsonify({
+            "ok": False, "reason": "rate_limited",
+            "message": f"Too many agent runs. Retry in {rl_info.get('reset_after_seconds', 60)}s.",
+        }), 429
     summary = agent_module.run_agent()
     return jsonify(summary)
 
@@ -271,87 +967,119 @@ def api_run_agent():
 # --- Real Razorpay webhook intake --------------------------------------------
 @app.route("/api/webhooks/razorpay", methods=["POST"])
 def api_webhook_razorpay():
-    """Receive a REAL Razorpay webhook (test or live mode) and feed it into the
-    same recovery pipeline used for synthetic data.
+    """Receive a Razorpay webhook, verify, persist, enqueue, and return 2xx fast.
 
-    Verification uses Razorpay's actual scheme: HMAC-SHA256 over the RAW request
-    body, keyed with RAZORPAY_WEBHOOK_SECRET (configured in the Razorpay Dashboard),
-    checked via razorpay_adapter.verify_razorpay_signature — NOT the synthetic
-    webhook_security.py scheme used by seed.py, and NOT re-serialized JSON (which
-    would silently break the signature). An invalid/missing signature is rejected
-    with 400 and never reaches the database or the pipeline.
+    Architecture (Phase 6.5 async pipeline):
+        1. Verify HMAC-SHA256 signature         → reject 400 on failure
+        2. Parse payload                        → reject 400 on bad JSON
+        3. Map to internal record               → ack 200 (skipped) on unhandled types
+        4. Persist webhook_events row           → ack 200 (duplicate) if already seen
+        5. Upsert/insert mandate_failures row   → idempotent
+        6. Enqueue a recovery_jobs row          → durable, idempotent
+        7. Return 200 immediately               → Razorpay does not retry
 
-    Razorpay expects a 2xx response for every delivered event (understood or not) or
-    it will keep retrying delivery, so unrecognized event types are acknowledged
-    with 200 and simply skipped rather than erroring.
+    The actual recovery pipeline runs asynchronously via the scheduler worker
+    (/api/scheduler/run or the background loop).  The HTTP request never waits
+    for strategy/scoring/LLM work.
+
+    Webhook lifecycle states tracked in webhook_events.lifecycle_status:
+        RECEIVED → VERIFIED → PERSISTED → QUEUED → PROCESSING → COMPLETED
+        or: FAILED / DUPLICATE / REJECTED
     """
-    raw_body = request.get_data()  # exact raw bytes, before any JSON parsing
+    cid = getattr(g, "correlation_id", "-")
+    raw_body = request.get_data()
     signature = request.headers.get("X-Razorpay-Signature")
 
+    # Step 1 — HMAC-SHA256 signature verification
     if not razorpay_adapter.verify_razorpay_signature(raw_body, signature):
-        app.logger.warning("Rejected Razorpay webhook: signature verification failed.")
+        app.logger.warning("webhook correlation_id=%s REJECTED invalid_signature", cid)
         return jsonify({"ok": False, "error": "invalid_signature"}), 400
 
+    # Step 2 — parse
     try:
         payload = json.loads(raw_body.decode("utf-8"))
     except (ValueError, UnicodeDecodeError):
         return jsonify({"ok": False, "error": "invalid_json"}), 400
 
+    razorpay_event_id = payload.get("id", "")
+
+    # Step 3 — map to internal record
     record = razorpay_adapter.map_razorpay_event(payload)
     if record is None:
-        # Recognized-but-unhandled event type, or missing required fields
-        # (e.g. no resolvable customer_id). Acknowledge so Razorpay stops retrying.
-        return jsonify({"ok": True, "skipped": True,
-                        "event": payload.get("event")}), 200
+        app.logger.info("webhook correlation_id=%s event=%s skipped (unhandled type)",
+                        cid, payload.get("event"))
+        return jsonify({"ok": True, "skipped": True, "event": payload.get("event")}), 200
 
-    if record.get("amount") is None or float(record["amount"]) <= 0:
-        # A subscription-level event with no attached charge amount (e.g. a bare
-        # subscription.halted with no failed payment yet) carries nothing for the
-        # recovery pipeline to act on. Store nothing; acknowledge receipt.
-        return jsonify({"ok": True, "skipped": True,
-                        "reason": "no_actionable_amount"}), 200
+    if record.get("amount") is None or float(record.get("amount") or 0) <= 0:
+        return jsonify({"ok": True, "skipped": True, "reason": "no_actionable_amount"}), 200
 
     conn = db.get_connection()
     try:
+        # Step 4 — idempotency: claim the webhook event row
         is_duplicate, event_id = razorpay_adapter.claim_webhook_event(
             conn, payload, raw_body, record["customer_id"])
         if is_duplicate:
             conn.commit()
+            app.logger.info("webhook correlation_id=%s event_id=%s DUPLICATE",
+                            cid, event_id)
             return jsonify({
                 "ok": True,
-                "status": "already_processed",
+                "lifecycle": "DUPLICATE",
+                "status": "already_processed",   # backwards-compatible alias
                 "event_id": event_id,
                 "customer_id": record["customer_id"],
             }), 200
 
+        # Step 5 — persist/update the case row
         existing = db.get_case(conn, record["customer_id"])
         if existing is not None:
-            # Distinct *new* event for a customer already on file (e.g. a later
-            # failed retry on the same subscription): update in place rather than
-            # violating the customer_id PRIMARY KEY. Duplicate *event ids* never
-            # reach here — they returned already_processed above.
             db.update_case(conn, record["customer_id"],
-                          amount=record["amount"], failure_reason=record["failure_reason"],
-                          raw_event_type=record["raw_event_type"])
-            db.mark_webhook_event_processed(conn, event_id)
-            conn.commit()
-            return jsonify({"ok": True, "updated": True,
-                            "customer_id": record["customer_id"],
-                            "event_id": event_id}), 200
-        db.insert_mandate_failure(conn, record)
+                           amount=record["amount"],
+                           failure_reason=record["failure_reason"],
+                           raw_event_type=record["raw_event_type"])
+            case_created = False
+        else:
+            db.insert_mandate_failure(conn, record)
+            case_created = True
+
+        # Step 6 — mark event persisted, then enqueue a recovery job
+        db.update_webhook_lifecycle(conn, event_id, "PERSISTED")
+
+        import scheduler as _sched
+        from payment_executor import ExecutionMode
+        case_row = db.get_case(conn, record["customer_id"])
+        exec_mode = _sched.execution_mode_for_case(case_row) if case_row else ExecutionMode.SIMULATION
+        job_ids = _sched.schedule_recovery_jobs(
+            conn=conn,
+            case=case_row or record,
+            execution_mode=exec_mode,
+            max_retries=agent_module.MAX_RETRIES,
+        )
+
+        if job_ids:
+            db.update_webhook_lifecycle(conn, event_id, "QUEUED")
+        else:
+            # Already queued or no retry warranted (mandate_revoked)
+            db.update_webhook_lifecycle(conn, event_id, "QUEUED")
+
         db.mark_webhook_event_processed(conn, event_id)
         conn.commit()
+
+        app.logger.info(
+            "webhook correlation_id=%s event_id=%s customer_id=%s lifecycle=QUEUED "
+            "jobs_created=%d case_created=%s exec_mode=%s",
+            cid, event_id, record["customer_id"], len(job_ids),
+            case_created, exec_mode.value,
+        )
+
     except Exception as exc:
-        # Any unhandled exception during persistence: roll back the entire operation
-        # so we leave no partial state. Log the real reason server-side; return a
-        # generic 500 so internal details aren't leaked to the caller.
         try:
             conn.rollback()
         except Exception:
             pass
         app.logger.error(
-            "Webhook persistence error for event_id=%s customer_id=%s: %s",
-            payload.get("id", "unknown"), record.get("customer_id", "unknown"), exc,
+            "webhook persistence error correlation_id=%s event_id=%s customer_id=%s: %s",
+            cid, payload.get("id", "?"), record.get("customer_id", "?"), exc,
             exc_info=True,
         )
         return jsonify({"ok": False, "error": "internal_error",
@@ -359,19 +1087,75 @@ def api_webhook_razorpay():
     finally:
         conn.close()
 
-    return jsonify({"ok": True, "created": True,
-                    "customer_id": record["customer_id"],
-                    "failure_reason": record["failure_reason"]}), 200
+    return jsonify({
+        "ok": True,
+        "lifecycle": "QUEUED",
+        "created": case_created,
+        "customer_id": record["customer_id"],
+        "failure_reason": record["failure_reason"],
+        "event_id": event_id,
+        "jobs_queued": len(job_ids),
+    }), 200
+
+
+def _issue_sse_token() -> str:
+    """Issue a new single-use SSE stream token (60 s TTL)."""
+    token = secrets.token_urlsafe(32)
+    expires = time.time() + _SSE_TOKEN_TTL
+    with _sse_token_lock:
+        # Prune expired tokens while we have the lock.
+        now = time.time()
+        expired = [t for t, exp in _SSE_TOKENS.items() if exp < now]
+        for t in expired:
+            del _SSE_TOKENS[t]
+        _SSE_TOKENS[token] = expires
+    return token
+
+
+def _consume_sse_token(token: str) -> bool:
+    """Validate and consume a one-use SSE token. Returns True if valid."""
+    if not token:
+        return False
+    with _sse_token_lock:
+        expires = _SSE_TOKENS.get(token)
+        if expires is None:
+            return False
+        # Consume immediately — one-use.
+        del _SSE_TOKENS[token]
+        return time.time() < expires
+
+
+@app.route("/api/run-agent-stream-token", methods=["POST"])
+def api_run_agent_stream_token():
+    """Issue a one-use, 60-second token for the SSE stream endpoint.
+
+    Protected by X-API-Key (same gate as /api/run-agent). The browser's native
+    EventSource cannot send custom headers, so the stream itself is authenticated
+    via a short-lived query-param token obtained here.
+    """
+    token = _issue_sse_token()
+    return jsonify({"token": token, "ttl_seconds": _SSE_TOKEN_TTL})
 
 
 @app.route("/api/run-agent-stream")
 def api_run_agent_stream():
     """Stream per-case pipeline traces as Server-Sent Events for the live view.
 
-    Each `data:` line is one case's trace (Diagnosis -> Triage -> Strategy ->
-    Communication result); a final event carries {done, processed, status_counts}.
-    Uses the same seeded RNG / triage order as /api/run-agent, so outcomes match.
+    Requires a valid ?token= query parameter obtained from POST
+    /api/run-agent-stream-token (which is protected by X-API-Key). The token is
+    single-use and expires after 60 seconds, so it cannot be replayed or shared.
+
+    Each `data:` line is one case's trace; a final event carries
+    {done, processed, status_counts}.
     """
+    token = request.args.get("token", "")
+    if not _consume_sse_token(token):
+        # Return a JSON error in the SSE envelope so the browser EventSource
+        # gets a non-2xx and the UI can display a meaningful message.
+        return jsonify({"ok": False, "error": "unauthorized",
+                        "message": "Missing or expired stream token. "
+                                   "Obtain a token via POST /api/run-agent-stream-token."}), 401
+
     def event_stream():
         for trace in agent_module.run_agent_traced():
             yield "data: " + json.dumps(trace) + "\n\n"
@@ -659,22 +1443,83 @@ def _case_summary(case, ml_prob=None):
 
 @app.route("/api/cases")
 def api_cases():
-    """All cases with score + status, sorted by score descending (triage order).
+    """Cases with server-side pagination, filtering, sorting, and search.
 
-    Performance: ML predictions are computed once per request via predict_batch()
-    (single DataFrame + single model.predict_proba call) rather than N individual
-    per-case calls. health_score is computed once per case instead of twice.
+    Query parameters (all optional — omitting them returns a backwards-compatible
+    paginated first page sorted by score descending):
+        page        int  default 1       — 1-indexed page number
+        limit       int  default 50      — rows per page (max 500)
+        sort        str  default "score" — score | amount | failure_date | customer_id
+        order       str  default "desc"  — asc | desc
+        status      str                  — filter by case_status
+        reason      str                  — filter by failure_reason
+        category    str                  — filter by merchant_category
+        search      str                  — partial match on customer_id
+        source      str                  — synthetic | razorpay_live
+
+    Returns:
+        { cases: [...], total: N, page: P, limit: L, pages: total_pages }
     """
+    # --- parse query params ------------------------------------------------
+    try:
+        page  = max(1, int(request.args.get("page", 1)))
+    except (TypeError, ValueError):
+        page = 1
+    try:
+        limit = max(1, min(500, int(request.args.get("limit", 50))))
+    except (TypeError, ValueError):
+        limit = 50
+
+    sort_field = request.args.get("sort", "score")
+    order      = request.args.get("order", "desc").lower()
+    if order not in ("asc", "desc"):
+        order = "desc"
+
+    status_filter   = request.args.get("status", "").strip() or None
+    reason_filter   = request.args.get("reason", "").strip() or None
+    category_filter = request.args.get("category", "").strip() or None
+    source_filter   = request.args.get("source", "").strip() or None
+    search_term     = request.args.get("search", "").strip() or None
+
+    # --- pull filtered rows from DB ----------------------------------------
     conn = db.get_connection()
     try:
-        raw_cases = db.get_all_cases(conn)
+        raw_cases = db.get_cases_filtered(
+            conn,
+            status=status_filter,
+            failure_reason=reason_filter,
+            merchant_category=category_filter,
+            source=source_filter,
+            search=search_term,
+        )
     finally:
         conn.close()
-    # Batch ML predictions: one call for all N cases instead of N individual calls.
+
+    # --- compute scores (needed for sort + summary) -------------------------
     ml_probs = ml_predict.predict_batch(raw_cases)
     cases = [_case_summary(c, ml_prob=p) for c, p in zip(raw_cases, ml_probs)]
-    cases.sort(key=lambda c: c["score"], reverse=True)
-    return jsonify(cases)
+
+    # --- sort ---------------------------------------------------------------
+    _SORT_FIELDS = {"score", "amount", "failure_date", "customer_id",
+                    "health_score", "dunning_stage"}
+    if sort_field not in _SORT_FIELDS:
+        sort_field = "score"
+    reverse = (order == "desc")
+    cases.sort(key=lambda c: (c.get(sort_field) or 0), reverse=reverse)
+
+    # --- paginate -----------------------------------------------------------
+    total  = len(cases)
+    offset = (page - 1) * limit
+    page_cases = cases[offset: offset + limit]
+    pages  = max(1, (total + limit - 1) // limit)
+
+    return jsonify({
+        "cases":  page_cases,
+        "total":  total,
+        "page":   page,
+        "limit":  limit,
+        "pages":  pages,
+    })
 
 
 @app.route("/api/cases/<customer_id>/audit")
@@ -803,6 +1648,63 @@ def api_cohorts():
     return jsonify(metrics.cohorts())
 
 
+@app.route("/api/analytics/timeseries")
+def api_analytics_timeseries():
+    """Recovery trend over time using real audit_log / case data.
+
+    Query params:
+        days     int  default 30  — look-back window in days (7, 14, 30, 90, 365)
+        metric   str  default "recovery_rate"
+                      — recovery_rate | recovered_revenue | failed_payments | escalations
+        granularity str default "day" — day | week
+
+    Returns:
+        {
+          "metric": str,
+          "granularity": "day"|"week",
+          "data_type": "ACTUAL",
+          "series": [
+            { "period": "YYYY-MM-DD", "value": float,
+              "n": int, "ci_low": float, "ci_high": float },
+            ...
+          ],
+          "days": int
+        }
+
+    All data is derived from real stored rows.  Periods with no data are
+    included with value=0 so the chart has a continuous axis.
+    Clearly marked DATA_TYPE=ACTUAL to distinguish from simulation/forecast.
+    """
+    try:
+        days = max(1, min(365, int(request.args.get("days", 30))))
+    except (TypeError, ValueError):
+        days = 30
+
+    metric = request.args.get("metric", "recovery_rate")
+    valid_metrics = {"recovery_rate", "recovered_revenue", "failed_payments", "escalations"}
+    if metric not in valid_metrics:
+        metric = "recovery_rate"
+
+    granularity = request.args.get("granularity", "day")
+    if granularity not in ("day", "week"):
+        granularity = "day"
+
+    conn = db.get_connection()
+    try:
+        series = metrics.recovery_timeseries(conn, days=days, metric=metric,
+                                              granularity=granularity)
+    finally:
+        conn.close()
+
+    return jsonify({
+        "metric": metric,
+        "granularity": granularity,
+        "data_type": "ACTUAL",
+        "days": days,
+        "series": series,
+    })
+
+
 @app.route("/api/exceptions")
 def api_exceptions():
     """First-class exceptions list (R5/N2)."""
@@ -921,6 +1823,16 @@ def api_ask():
     the question can't be turned into any filter, respond gracefully so the UI can
     prompt the user to try an example instead of erroring.
     """
+    # Rate limiting: prevent quota exhaustion on the LLM-backed ask endpoint.
+    allowed, rl_info = rate_limit_module.flask_check("/api/ask", request)
+    if not allowed:
+        return jsonify({
+            "ok": False, "reason": "rate_limited",
+            "message": (f"Too many requests. Limit: {rl_info['limit']} per "
+                        f"{rl_info['window_seconds']}s. "
+                        f"Retry in {rl_info['reset_after_seconds']}s."),
+        }), 429
+
     payload = request.get_json(silent=True) or {}
     question = (payload.get("question") or "").strip()
     if not question:
@@ -1405,6 +2317,30 @@ def api_ev_case(customer_id):
     })
 
 
+@app.route("/api/notifications/status")
+def api_notifications_status():
+    """Return the current notification provider configuration (no secrets exposed).
+
+    Shows which provider adapter is active and whether real delivery is enabled.
+    Used by the dashboard to display notification status to the operator.
+    """
+    import notifications as notif_module
+    svc = notif_module.get_notification_service()
+    provider = svc.provider_name
+    real_delivery = provider not in ("demo", "log")
+    return jsonify({
+        "provider":       provider,
+        "real_delivery":  real_delivery,
+        "status":         "LIVE" if real_delivery else "DEMO",
+        "note": (
+            "Real delivery is active — notifications are sent via the configured provider."
+            if real_delivery else
+            "Demo mode — no real messages are sent. "
+            "Set NOTIFICATION_PROVIDER to a real adapter to enable delivery."
+        ),
+    })
+
+
 @app.route("/api/anomalies")
 def api_anomalies():
     """Run anomaly detection on current data and return all active alerts.
@@ -1447,6 +2383,13 @@ def api_investigate():
     """
     if not _P5_AVAILABLE:
         return _p5_unavailable()
+
+    allowed, rl_info = rate_limit_module.flask_check("/api/investigate", request)
+    if not allowed:
+        return jsonify({
+            "ok": False, "reason": "rate_limited",
+            "message": (f"Too many requests. Retry in {rl_info.get('reset_after_seconds', 60)}s."),
+        }), 429
 
     payload = request.get_json(silent=True) or {}
     question = (payload.get("question") or "").strip().lower()

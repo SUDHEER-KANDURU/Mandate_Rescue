@@ -660,10 +660,13 @@ class StrategyAgent:
         if self.ctx.rng.random() >= PROMISE_OFFER_PROB:
             return None
         promised_by = (datetime.now() + timedelta(days=3)).date().isoformat()
+        # Safe amount conversion: amount may be a string, float, or None depending on
+        # the data source (seed vs. webhook).  Never call int() on raw dict value.
+        _amount = int(round(float(case.get("amount") or 0)))
         self.ctx.set_status(case, "promised")
         self.ctx.log(case, "promise_recorded", f"Customer promised to pay by {promised_by}",
                      "pending", attempt,
-                     f"Customer committed to pay Rs {int(case['amount'])} by {promised_by}.",
+                     f"Customer committed to pay Rs {_amount} by {promised_by}.",
                      "promised")
         if self.ctx.rng.random() < PROMISE_KEPT_PROB:
             self.ctx.log(case, "promise_kept", "Promise kept; payment received", "success",
@@ -706,10 +709,11 @@ class StrategyAgent:
         # under the existing mandate, so skip normal retry and route to higher-limit
         # re-authorization (handled like mandate_expired), regardless of failure_reason.
         mandate_limit = float(case.get("mandate_limit", 5000) or 5000)
-        if float(case.get("amount", 0)) > mandate_limit:
+        if float(case.get("amount", 0) or 0) > mandate_limit:
+            _amt = int(round(float(case.get("amount", 0) or 0)))
             self.ctx.log(case, "mandate_limit_block",
                          "Blocked: amount exceeds UPI mandate limit", "n/a", 0,
-                         f"Amount Rs {int(case['amount'])} exceeds the UPI mandate limit of "
+                         f"Amount Rs {_amt} exceeds the UPI mandate limit of "
                          f"Rs {int(mandate_limit)}; a normal retry is not permitted. Requires "
                          f"mandate re-authorization at a higher limit before any debit.",
                          "in_progress")
@@ -855,29 +859,31 @@ def _has_terminal_audit(conn, customer_id):
 
 
 def _acquire_processing_lock(conn, customer_id):
-    """Attempt to acquire an exclusive processing lock for this case by inserting
-    a sentinel row into the DB inside the current transaction.
+    """Attempt to acquire an exclusive processing lock for this case.
 
-    Uses a dedicated processing_locks table (or falls back to a DB-level lock via
-    BEGIN IMMEDIATE) so that two concurrent workers cannot both pass the idempotency
-    check at the same time. Returns True if the lock was acquired, False if another
-    worker already holds it (i.e., the case is being or has been processed).
+    Uses BEGIN IMMEDIATE so that two concurrent workers cannot both pass the
+    idempotency check at the same time. Returns True if the lock was acquired,
+    False if another worker already holds it (i.e., the case is being or has been
+    processed).
 
-    The lock is automatically released when the caller's transaction commits or rolls
-    back — there is no separate unlock step.
+    The lock is automatically released when the caller's transaction commits or
+    rolls back — there is no separate unlock step.
     """
+    import logging as _log
     try:
         # BEGIN IMMEDIATE causes SQLite to upgrade to a reserved lock right away,
-        # serializing any concurrent writers at the point of the check. Since our
-        # connection already has an implicit transaction, this is a no-op on the
-        # current conn — the real effect is that two separate connections racing here
-        # will serialize at the DB level. If the connection is already in a
-        # transaction (typical for tests using an in-memory DB) this does nothing.
+        # serializing any concurrent writers at the point of the check. Two separate
+        # connections racing here will serialize at the DB level.
         conn.execute("BEGIN IMMEDIATE")
-    except Exception:
-        # Already in a transaction or IMMEDIATE not supported in this context.
-        # Fall through to the audit check which still provides in-process protection.
-        pass
+    except Exception as _lock_exc:
+        # OperationalError "cannot start a transaction within a transaction" is
+        # expected when the connection is already inside a transaction (e.g. tests
+        # using an in-memory DB). Log at DEBUG — this is not an error, but we do
+        # NOT swallow it silently with a bare pass so unusual exceptions are visible.
+        _log.getLogger("mandate_rescue.agent").debug(
+            "BEGIN IMMEDIATE skipped for %s: %s",
+            customer_id, _lock_exc,
+        )
     return not _has_terminal_audit(conn, customer_id)
 
 
@@ -1069,11 +1075,9 @@ def run_agent_traced():
     # written to audit_log as the deterministic ground-truth fallback, and the
     # drawer regenerates it (with the LLM) on first open after the run.
     #
-    # Save the prior budget state so a concurrent drawer/ask request that
-    # restores its own budget doesn't leave us suppressed, and vice versa.
-    # (Flask dev server is threaded=True — module globals are shared.)
-    _prior_suppress = llm_client._SUPPRESS_LLM
-    _prior_budget = llm_client._LIVE_BUDGET
+    # Use the public save/restore API (never access private module globals directly)
+    # so concurrent drawer/ask threads on other Flask worker threads are safe.
+    _prior_state = llm_client.save_llm_state()
     llm_client.set_live_budget([], suppress=True)
     try:
         all_cases = db.get_all_cases(conn)
@@ -1090,12 +1094,8 @@ def run_agent_traced():
             statuses[row["case_status"]] = statuses.get(row["case_status"], 0) + 1
     finally:
         conn.close()
-        # Restore the budget state that was in effect before this run started,
-        # so drawer / ask endpoints (which run on separate threads) are unaffected.
-        llm_client.set_live_budget(
-            None if _prior_budget is None else list(_prior_budget),
-            suppress=_prior_suppress,
-        )
+        # Restore the budget state that was in effect before this run started.
+        llm_client.restore_llm_state(_prior_state)
     yield {"done": True, "processed": processed, "status_counts": statuses}
 
 

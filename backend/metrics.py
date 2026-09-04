@@ -2,13 +2,54 @@
 
 Every figure is computed from mandate_failures final status and audit_log rows. No
 number is hardcoded (N1). Exceptions are treated as a first-class output (N2).
+
+Phase 6.5: Wilson score confidence intervals are computed for recovery-rate metrics
+wherever the sample size is meaningful (n ≥ 5). The Wilson interval is preferred over
+the normal approximation because it stays within [0,1] for extreme proportions and
+is valid for small samples.
 """
+
+import math
 
 import db
 
 
 def _final_statuses(conn):
     return {row["customer_id"]: row for row in db.get_all_cases(conn)}
+
+
+# ---------------------------------------------------------------------------
+# Wilson score confidence interval
+# ---------------------------------------------------------------------------
+_Z95 = 1.959964  # z-score for 95% confidence
+
+
+def wilson_ci(successes: int, total: int, z: float = _Z95) -> dict:
+    """Wilson score confidence interval for a proportion.
+
+    Returns a dict:
+        { "rate": float, "ci_low": float, "ci_high": float,
+          "n": int, "reliable": bool }
+
+    `reliable` is True when n ≥ 10 (interval meaningful).  For n < 10 the
+    interval is still computed but flagged so the UI can add a caveat.
+    For n == 0, returns zeroes with reliable=False.
+    """
+    if total == 0:
+        return {"rate": 0.0, "ci_low": 0.0, "ci_high": 0.0,
+                "n": 0, "reliable": False}
+    p = successes / total
+    denominator = 1 + z * z / total
+    centre = (p + z * z / (2 * total)) / denominator
+    margin = (z * math.sqrt(p * (1 - p) / total + z * z / (4 * total * total))
+              / denominator)
+    return {
+        "rate":     round(p, 4),
+        "ci_low":   round(max(0.0, centre - margin), 4),
+        "ci_high":  round(min(1.0, centre + margin), 4),
+        "n":        total,
+        "reliable": total >= 10,
+    }
 
 
 def core_metrics(conn=None):
@@ -34,6 +75,8 @@ def core_metrics(conn=None):
         escalation_rate = (len(escalated_cases) / total) if total else 0.0
         amount_recovery_rate = (amount_recovered / amount_at_risk) if amount_at_risk else 0.0
 
+        recovery_ci = wilson_ci(len(recovered_cases), total)
+
         return {
             "total_cases": total,
             "amount_at_risk": round(amount_at_risk, 2),
@@ -43,6 +86,8 @@ def core_metrics(conn=None):
             "recovery_rate": round(recovery_rate, 4),
             "escalation_rate": round(escalation_rate, 4),
             "amount_recovery_rate": round(amount_recovery_rate, 4),
+            # Wilson 95% CI on the recovery rate
+            "recovery_rate_ci": recovery_ci,
         }
     finally:
         if own:
@@ -173,6 +218,7 @@ def _rate_breakdown(cases, key_fn):
     for key, b in buckets.items():
         b["segment"] = key
         b["recovery_rate"] = round(b["recovered"] / b["total"], 4) if b["total"] else 0.0
+        b["recovery_rate_ci"] = wilson_ci(b["recovered"], b["total"])
         b["amount_at_risk"] = round(b["amount_at_risk"], 2)
         b["amount_recovered"] = round(b["amount_recovered"], 2)
         out.append(b)
@@ -194,3 +240,100 @@ def cohorts(conn=None):
     finally:
         if own:
             conn.close()
+
+
+# ---------------------------------------------------------------------------
+# Time-series analytics (Phase 6.5)
+# ---------------------------------------------------------------------------
+
+def recovery_timeseries(conn, days: int = 30, metric: str = "recovery_rate",
+                         granularity: str = "day") -> list:
+    """Aggregate recovery metrics over time from real stored data.
+
+    Uses failure_date as the event date (the date the failure was first recorded).
+    Returns a list of period dicts sorted chronologically, one entry per period.
+    Periods with no cases show value=0 (no gap in the chart axis).
+
+    Metrics:
+        recovery_rate      — fraction of cases recovered in that period (Wilson CI included)
+        recovered_revenue  — sum of amount for recovered cases
+        failed_payments    — count of all cases in that period (total failures)
+        escalations        — count of escalated cases
+
+    Data type: ACTUAL (real stored rows only, never synthetic or forecast).
+    """
+    from datetime import datetime as _dt, timedelta as _td, date as _date
+
+    now = _dt.now()
+    start = (now - _td(days=days)).date()
+
+    # Pull all cases whose failure_date falls in the window.
+    # failure_date is stored as TEXT "YYYY-MM-DD" or ISO timestamp.
+    rows = conn.execute(
+        "SELECT failure_date, case_status, amount FROM mandate_failures"
+    ).fetchall()
+
+    # Build a dict: period_key -> {total, recovered, escalated, revenue}
+    from collections import defaultdict
+    buckets: dict = defaultdict(lambda: {"total": 0, "recovered": 0,
+                                          "escalated": 0, "revenue": 0.0})
+
+    for row in rows:
+        raw_date = str(row["failure_date"] or "")[:10]
+        try:
+            fd = _dt.strptime(raw_date, "%Y-%m-%d").date()
+        except ValueError:
+            continue
+        if fd < start:
+            continue
+
+        if granularity == "week":
+            # ISO week start (Monday)
+            period_key = (fd - _td(days=fd.weekday())).isoformat()
+        else:
+            period_key = fd.isoformat()
+
+        b = buckets[period_key]
+        b["total"] += 1
+        status = row["case_status"]
+        amount = float(row["amount"] or 0)
+        if status == "recovered":
+            b["recovered"] += 1
+            b["revenue"] += amount
+        elif status == "escalated":
+            b["escalated"] += 1
+
+    # Generate all periods in the window so chart axis is continuous.
+    all_periods = []
+    cursor = start
+    step = _td(days=7) if granularity == "week" else _td(days=1)
+    if granularity == "week":
+        # Align to Monday
+        cursor = start - _td(days=start.weekday())
+    while cursor <= now.date():
+        all_periods.append(cursor.isoformat())
+        cursor += step
+
+    series = []
+    for period in all_periods:
+        b = buckets.get(period, {"total": 0, "recovered": 0,
+                                  "escalated": 0, "revenue": 0.0})
+        n = b["total"]
+        if metric == "recovery_rate":
+            ci = wilson_ci(b["recovered"], n)
+            series.append({
+                "period":   period,
+                "value":    ci["rate"],
+                "ci_low":   ci["ci_low"],
+                "ci_high":  ci["ci_high"],
+                "n":        n,
+                "reliable": ci["reliable"],
+            })
+        elif metric == "recovered_revenue":
+            series.append({"period": period, "value": round(b["revenue"], 2), "n": n})
+        elif metric == "escalations":
+            series.append({"period": period, "value": b["escalated"], "n": n})
+        else:  # failed_payments
+            series.append({"period": period, "value": n, "n": n})
+
+    return series

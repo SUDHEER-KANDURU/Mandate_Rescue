@@ -60,6 +60,7 @@ from typing import Optional
 
 import db
 import agent as agent_module
+import salary_window as salary_window_module
 from payment_executor import (
     ExecutionMode,
     ExecutionOutcome,
@@ -154,8 +155,30 @@ def schedule_recovery_jobs(
             execution_mode = ExecutionMode.SIMULATION
 
     now = datetime.now(timezone.utc)
+
     # Per-attempt delay schedule (hours).
-    ATTEMPT_DELAYS_H = {1: 0, 2: 24, 3: 48}
+    # For insufficient_funds cases, attempt 1 is scheduled at the START of the
+    # salary window so the debit is timed for when funds are most likely present.
+    # Other reasons use a fixed 24-h gap between attempts (RBI pre-debit window).
+    # All attempts beyond max_retries=3 use (attempt-1)*24h as a safe fallback.
+    ATTEMPT_DELAYS_H = {2: 24, 3: 48}  # attempt 1 timing computed below
+
+    # Determine attempt-1 scheduled_at using salary window for insufficient_funds
+    if reason == "insufficient_funds":
+        try:
+            window = salary_window_module.infer_window(case)
+            # window['window'] = (start_day, end_day) as day-of-month offsets from now
+            # Use the start of the window (first day funds are expected) as attempt-1.
+            start_day = int(window.get("window", (0, 0))[0])
+            window_dt = now + timedelta(days=max(0, start_day))
+            # Ensure at least 25 hours from now (RBI 24-h pre-debit notice + buffer).
+            min_dt = now + timedelta(hours=25)
+            attempt1_dt = max(window_dt, min_dt)
+        except Exception:
+            attempt1_dt = now + timedelta(hours=25)
+        ATTEMPT_DELAYS_H[1] = int((attempt1_dt - now).total_seconds() / 3600)
+    else:
+        ATTEMPT_DELAYS_H[1] = 0  # non-insufficient_funds: execute as soon as possible
 
     created_ids = []
     for attempt in range(1, max_retries + 1):

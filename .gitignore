@@ -27,10 +27,16 @@ htmlcov/
 test_output.txt
 test_p6*.txt
 *.test.txt
-# Phase 6 verification scripts (temp)
+# Phase verification / internal planning docs (temp / internal only)
 _verify_p6.py
 _debug_rollback.py
 _phase6_docs_section.txt
+PHASE_*.md
+AUDIT_AND_UPGRADE_PLAN.md
+
+# Ad-hoc dev probe scripts
+scripts/dev/
+backend/test_llm_live.py
 
 # Docker
 *.db-shm

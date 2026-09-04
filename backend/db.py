@@ -6,6 +6,7 @@ row that backs a dashboard number is easy to audit. See design.md section 3.
 
 import os
 import sqlite3
+from datetime import datetime, timezone
 
 # Keep the database at the project root (one level up from backend/) so it stays a
 # single canonical file regardless of which backend module is the entrypoint.
@@ -92,7 +93,10 @@ CREATE TABLE IF NOT EXISTS webhook_events (
     processed         INTEGER NOT NULL DEFAULT 0,
     customer_id       TEXT,
     event_type        TEXT,
-    rejected_reason   TEXT
+    rejected_reason   TEXT,
+    lifecycle_status  TEXT    NOT NULL DEFAULT 'RECEIVED'
+        -- RECEIVED | VERIFIED | PERSISTED | QUEUED | PROCESSING | COMPLETED
+        -- | FAILED | DUPLICATE | REJECTED
 );
 
 CREATE INDEX IF NOT EXISTS idx_webhook_events_event_id ON webhook_events(razorpay_event_id);
@@ -148,6 +152,8 @@ def init_db(conn=None):
     try:
         conn.executescript(SCHEMA)
         _migrate(conn)
+        # Auth schema (merchants, sessions, OTP, security events, notifications)
+        conn.executescript(AUTH_SCHEMA)
         conn.commit()
     finally:
         if own:
@@ -174,6 +180,7 @@ def _migrate(conn):
         "customer_id": "TEXT",
         "event_type": "TEXT",
         "rejected_reason": "TEXT",
+        "lifecycle_status": "TEXT NOT NULL DEFAULT 'RECEIVED'",
     }
     for col, decl in additive_we.items():
         if col not in existing_we:
@@ -489,6 +496,32 @@ def get_all_cases(conn):
     return [dict(r) for r in rows]
 
 
+def get_cases_filtered(conn, status=None, failure_reason=None,
+                        merchant_category=None, source=None, search=None):
+    """Return mandate_failures rows matching the given filters.
+
+    All filters are optional; unset filters match all rows.  `search` is a
+    partial, case-insensitive match on customer_id.  Uses parameterised SQL
+    throughout — no string interpolation of user input.
+    """
+    clauses, params = [], []
+    if status:
+        clauses.append("case_status = ?"); params.append(status)
+    if failure_reason:
+        clauses.append("failure_reason = ?"); params.append(failure_reason)
+    if merchant_category:
+        clauses.append("merchant_category = ?"); params.append(merchant_category)
+    if source:
+        clauses.append("source = ?"); params.append(source)
+    if search:
+        clauses.append("customer_id LIKE ?"); params.append(f"%{search}%")
+    where = ("WHERE " + " AND ".join(clauses)) if clauses else ""
+    rows = conn.execute(
+        f"SELECT * FROM mandate_failures {where}", params
+    ).fetchall()
+    return [dict(r) for r in rows]
+
+
 def get_case(conn, customer_id):
     row = conn.execute(
         "SELECT * FROM mandate_failures WHERE customer_id = ?", (customer_id,)
@@ -545,25 +578,41 @@ def get_webhook_event(conn, razorpay_event_id):
     return dict(row) if row else None
 
 
-def insert_webhook_event(conn, razorpay_event_id, payload_hash=None):
+def insert_webhook_event(conn, razorpay_event_id, payload_hash=None,
+                         lifecycle_status="RECEIVED"):
     """Insert a webhook_events row. Returns True on insert, False if the event id
     already exists (UNIQUE constraint — the duplicate must not be treated as new)."""
     try:
         conn.execute(
             """
-            INSERT INTO webhook_events (razorpay_event_id, payload_hash, processed)
-            VALUES (?, ?, 0)
+            INSERT INTO webhook_events
+                (razorpay_event_id, payload_hash, processed, lifecycle_status)
+            VALUES (?, ?, 0, ?)
             """,
-            (razorpay_event_id, payload_hash),
+            (razorpay_event_id, payload_hash, lifecycle_status),
         )
         return True
     except sqlite3.IntegrityError:
         return False
 
 
+def update_webhook_lifecycle(conn, razorpay_event_id, lifecycle_status: str) -> None:
+    """Update the lifecycle_status of a webhook_events row.
+
+    Valid transitions:
+        RECEIVED → VERIFIED → PERSISTED → QUEUED → PROCESSING → COMPLETED
+        Any state → FAILED | DUPLICATE | REJECTED
+    """
+    conn.execute(
+        "UPDATE webhook_events SET lifecycle_status = ? WHERE razorpay_event_id = ?",
+        (lifecycle_status, razorpay_event_id),
+    )
+
+
 def mark_webhook_event_processed(conn, razorpay_event_id):
     conn.execute(
-        "UPDATE webhook_events SET processed = 1 WHERE razorpay_event_id = ?",
+        "UPDATE webhook_events SET processed = 1, lifecycle_status = 'COMPLETED' "
+        "WHERE razorpay_event_id = ?",
         (razorpay_event_id,),
     )
 
@@ -592,8 +641,10 @@ def is_legal_transition(from_status, to_status):
 
 
 def record_state_transition(conn, customer_id, from_status, to_status, triggered_by):
-    """Append a row to state_transitions. Only call after verifying legality."""
-    from datetime import datetime
+    """Append a row to state_transitions. Only call after verifying legality.
+
+    Uses UTC timestamps consistently so comparisons across timezones are safe.
+    """
     conn.execute(
         """
         INSERT INTO state_transitions
@@ -601,7 +652,7 @@ def record_state_transition(conn, customer_id, from_status, to_status, triggered
         VALUES (?, ?, ?, ?, ?)
         """,
         (customer_id, from_status, to_status,
-         datetime.now().isoformat(timespec="seconds"), triggered_by),
+         datetime.now(timezone.utc).isoformat(timespec="seconds"), triggered_by),
     )
 
 
@@ -816,9 +867,7 @@ def job_exists_for_attempt(conn, customer_id: str, attempt_number: int) -> bool:
     return row is not None
 
 
-# We need datetime/timezone for the job helpers above — import here to avoid
-# polluting the top of the file (db.py intentionally has minimal imports).
-from datetime import datetime, timezone
+# datetime/timezone are imported at the top of this module.
 
 
 # ---------------------------------------------------------------------------
@@ -1369,3 +1418,511 @@ def _migrate_phase6(conn) -> None:
                 conn.execute(f"ALTER TABLE policy_recommendations ADD COLUMN {col} {decl}")
             except Exception:
                 pass
+
+
+# ===========================================================================
+# Merchant Authentication Schema (added in auth phase)
+# ===========================================================================
+
+AUTH_SCHEMA = """
+-- ---------------------------------------------------------------------------
+-- merchants: one row per registered merchant account
+-- ---------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS merchants (
+    merchant_id       TEXT    PRIMARY KEY,          -- UUID
+    email             TEXT    UNIQUE NOT NULL,
+    email_verified    INTEGER NOT NULL DEFAULT 0,   -- 0=pending, 1=verified
+    password_hash     TEXT    NOT NULL,             -- PBKDF2-SHA256 via werkzeug
+    full_name         TEXT    NOT NULL,
+    phone             TEXT,
+    country           TEXT    NOT NULL DEFAULT 'IN',
+    address_line1     TEXT,
+    address_line2     TEXT,
+    city              TEXT,
+    state_region      TEXT,
+    postal_code       TEXT,
+    business_name     TEXT    NOT NULL,
+    business_type     TEXT,
+    business_website  TEXT,
+    business_address  TEXT,                        -- if different from personal
+    role              TEXT    NOT NULL DEFAULT 'merchant',  -- merchant | admin
+    is_active         INTEGER NOT NULL DEFAULT 1,
+    created_at        TEXT    NOT NULL,
+    updated_at        TEXT    NOT NULL,
+    last_login_at     TEXT,
+    terms_accepted    INTEGER NOT NULL DEFAULT 0,
+    terms_accepted_at TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_merchants_email ON merchants(email);
+CREATE INDEX IF NOT EXISTS idx_merchants_role  ON merchants(role);
+
+-- ---------------------------------------------------------------------------
+-- otp_challenges: one-time password challenges for email verification,
+--                 password reset, and change-password flows
+-- ---------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS otp_challenges (
+    challenge_id      TEXT    PRIMARY KEY,          -- UUID
+    merchant_id       TEXT,                         -- NULL for pre-registration OTPs
+    email             TEXT    NOT NULL,             -- target address
+    purpose           TEXT    NOT NULL,
+        -- registration | password_reset | change_password | change_email
+    otp_hash          TEXT    NOT NULL,             -- SHA-256 hash; NEVER store plaintext
+    created_at        TEXT    NOT NULL,
+    expires_at        TEXT    NOT NULL,             -- ISO-8601 UTC
+    used              INTEGER NOT NULL DEFAULT 0,
+    attempts          INTEGER NOT NULL DEFAULT 0,
+    max_attempts      INTEGER NOT NULL DEFAULT 5,
+    last_attempt_at   TEXT,
+    new_email         TEXT                          -- for change_email purpose only
+);
+CREATE INDEX IF NOT EXISTS idx_otp_email   ON otp_challenges(email, purpose);
+CREATE INDEX IF NOT EXISTS idx_otp_expires ON otp_challenges(expires_at);
+
+-- ---------------------------------------------------------------------------
+-- sessions: server-side session tokens (7-day lifetime)
+-- ---------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS sessions (
+    session_id        TEXT    PRIMARY KEY,          -- random 32-byte hex token
+    merchant_id       TEXT    NOT NULL,
+    created_at        TEXT    NOT NULL,
+    expires_at        TEXT    NOT NULL,             -- created_at + 7 days
+    last_seen_at      TEXT    NOT NULL,
+    ip_address        TEXT,
+    user_agent        TEXT,
+    invalidated       INTEGER NOT NULL DEFAULT 0,
+    FOREIGN KEY (merchant_id) REFERENCES merchants(merchant_id)
+);
+CREATE INDEX IF NOT EXISTS idx_sessions_merchant   ON sessions(merchant_id);
+CREATE INDEX IF NOT EXISTS idx_sessions_expires    ON sessions(expires_at);
+CREATE INDEX IF NOT EXISTS idx_sessions_valid      ON sessions(session_id)
+    WHERE invalidated = 0;
+
+-- ---------------------------------------------------------------------------
+-- security_events: append-only audit trail for account-level security actions
+-- ---------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS security_events (
+    event_id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    merchant_id       TEXT    NOT NULL,
+    event_type        TEXT    NOT NULL,
+        -- registered | email_verified | login_success | login_failed
+        -- | logout | password_reset | password_changed | email_changed
+        -- | profile_updated | notification_pref_changed | session_invalidated
+    ip_address        TEXT,
+    user_agent        TEXT,
+    detail            TEXT,                         -- safe context, NO secrets/passwords
+    created_at        TEXT    NOT NULL,
+    FOREIGN KEY (merchant_id) REFERENCES merchants(merchant_id)
+);
+CREATE INDEX IF NOT EXISTS idx_sec_events_merchant ON security_events(merchant_id);
+CREATE INDEX IF NOT EXISTS idx_sec_events_type     ON security_events(event_type);
+CREATE INDEX IF NOT EXISTS idx_sec_events_created  ON security_events(created_at DESC);
+
+-- ---------------------------------------------------------------------------
+-- notification_preferences: per-merchant opt-in/out for non-security emails
+-- ---------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS notification_preferences (
+    merchant_id              TEXT    PRIMARY KEY,
+    recovery_escalations     INTEGER NOT NULL DEFAULT 1,
+    anomaly_alerts           INTEGER NOT NULL DEFAULT 1,
+    policy_recommendations   INTEGER NOT NULL DEFAULT 1,
+    system_failures          INTEGER NOT NULL DEFAULT 1,
+    weekly_digest            INTEGER NOT NULL DEFAULT 1,
+    updated_at               TEXT    NOT NULL,
+    FOREIGN KEY (merchant_id) REFERENCES merchants(merchant_id)
+);
+
+-- ---------------------------------------------------------------------------
+-- notification_records: delivery log for every email sent (or attempted)
+-- ---------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS notification_records (
+    record_id         TEXT    PRIMARY KEY,          -- UUID
+    merchant_id       TEXT,                         -- NULL for system-wide emails
+    email_to          TEXT    NOT NULL,             -- recipient address (not masked here)
+    email_type        TEXT    NOT NULL,
+        -- registration_otp | password_reset_otp | change_password_otp
+        -- | change_email_otp | login_alert | recovery_escalation
+        -- | anomaly_alert | policy_recommendation | recovery_failure | test_email
+    subject           TEXT    NOT NULL,
+    status            TEXT    NOT NULL DEFAULT 'QUEUED',
+        -- QUEUED | SENDING | SENT | FAILED | SIMULATED
+    provider          TEXT    NOT NULL DEFAULT 'simulated',
+    failure_reason    TEXT,                         -- safe error message, no credentials
+    created_at        TEXT    NOT NULL,
+    sent_at           TEXT,
+    FOREIGN KEY (merchant_id) REFERENCES merchants(merchant_id)
+);
+CREATE INDEX IF NOT EXISTS idx_notif_merchant  ON notification_records(merchant_id);
+CREATE INDEX IF NOT EXISTS idx_notif_type      ON notification_records(email_type);
+CREATE INDEX IF NOT EXISTS idx_notif_status    ON notification_records(status);
+CREATE INDEX IF NOT EXISTS idx_notif_created   ON notification_records(created_at DESC);
+"""
+
+
+def init_auth_schema(conn=None) -> None:
+    """Create all auth tables and indexes (idempotent via CREATE IF NOT EXISTS)."""
+    own = conn is None
+    if own:
+        conn = get_connection()
+    try:
+        conn.executescript(AUTH_SCHEMA)
+        conn.commit()
+    finally:
+        if own:
+            conn.close()
+
+
+# ---------------------------------------------------------------------------
+# Merchant helpers
+# ---------------------------------------------------------------------------
+
+MERCHANT_WRITE_COLS = [
+    "email", "email_verified", "password_hash", "full_name", "phone",
+    "country", "address_line1", "address_line2", "city", "state_region",
+    "postal_code", "business_name", "business_type", "business_website",
+    "business_address", "role", "is_active", "created_at", "updated_at",
+    "last_login_at", "terms_accepted", "terms_accepted_at",
+]
+
+MERCHANT_PUBLIC_COLS = [
+    "merchant_id", "email", "email_verified", "full_name", "phone",
+    "country", "address_line1", "address_line2", "city", "state_region",
+    "postal_code", "business_name", "business_type", "business_website",
+    "business_address", "role", "is_active", "created_at", "updated_at",
+    "last_login_at", "terms_accepted", "terms_accepted_at",
+]
+
+
+def create_merchant(conn, merchant_id: str, email: str, password_hash: str,
+                    full_name: str, business_name: str,
+                    phone: str = None, country: str = "IN",
+                    address_line1: str = None, address_line2: str = None,
+                    city: str = None, state_region: str = None,
+                    postal_code: str = None, business_type: str = None,
+                    business_website: str = None, business_address: str = None,
+                    terms_accepted: int = 0) -> bool:
+    """Insert a new merchant row. Returns True on success, False if email exists."""
+    now = datetime.now(timezone.utc).isoformat(timespec="seconds")
+    try:
+        conn.execute(
+            """
+            INSERT INTO merchants (
+                merchant_id, email, email_verified, password_hash,
+                full_name, phone, country,
+                address_line1, address_line2, city, state_region, postal_code,
+                business_name, business_type, business_website, business_address,
+                role, is_active, created_at, updated_at,
+                terms_accepted, terms_accepted_at
+            ) VALUES (?,?,0,?,?,?,?,?,?,?,?,?,?,?,?,?,'merchant',1,?,?,?,?)
+            """,
+            (merchant_id, email.lower().strip(), password_hash,
+             full_name, phone, country,
+             address_line1, address_line2, city, state_region, postal_code,
+             business_name, business_type, business_website, business_address,
+             now, now,
+             terms_accepted, now if terms_accepted else None),
+        )
+        return True
+    except sqlite3.IntegrityError:
+        return False
+
+
+def get_merchant_by_id(conn, merchant_id: str) -> dict | None:
+    row = conn.execute(
+        "SELECT * FROM merchants WHERE merchant_id = ?", (merchant_id,)
+    ).fetchone()
+    return dict(row) if row else None
+
+
+def get_merchant_by_email(conn, email: str) -> dict | None:
+    row = conn.execute(
+        "SELECT * FROM merchants WHERE email = ?", (email.lower().strip(),)
+    ).fetchone()
+    return dict(row) if row else None
+
+
+def update_merchant(conn, merchant_id: str, **fields) -> None:
+    """Update whitelisted merchant columns. Always refreshes updated_at."""
+    allowed = {k: v for k, v in fields.items() if k in MERCHANT_WRITE_COLS}
+    if not allowed:
+        return
+    allowed["updated_at"] = datetime.now(timezone.utc).isoformat(timespec="seconds")
+    assignments = ", ".join(f"{k} = ?" for k in allowed)
+    conn.execute(
+        f"UPDATE merchants SET {assignments} WHERE merchant_id = ?",
+        list(allowed.values()) + [merchant_id],
+    )
+
+
+def verify_merchant_email(conn, merchant_id: str) -> None:
+    """Mark the merchant's email as verified."""
+    update_merchant(conn, merchant_id, email_verified=1)
+
+
+def set_merchant_last_login(conn, merchant_id: str) -> None:
+    now = datetime.now(timezone.utc).isoformat(timespec="seconds")
+    conn.execute(
+        "UPDATE merchants SET last_login_at = ?, updated_at = ? WHERE merchant_id = ?",
+        (now, now, merchant_id),
+    )
+
+
+# ---------------------------------------------------------------------------
+# OTP helpers
+# ---------------------------------------------------------------------------
+
+def create_otp_challenge(conn, challenge_id: str, email: str, purpose: str,
+                          otp_hash: str, ttl_seconds: int = 600,
+                          merchant_id: str = None,
+                          new_email: str = None) -> None:
+    """Insert a new OTP challenge. Expires in ttl_seconds (default 10 min)."""
+    now = datetime.now(timezone.utc)
+    expires = (now + __import__('datetime').timedelta(seconds=ttl_seconds)).isoformat(timespec="seconds")
+    conn.execute(
+        """
+        INSERT INTO otp_challenges
+            (challenge_id, merchant_id, email, purpose, otp_hash,
+             created_at, expires_at, used, attempts, new_email)
+        VALUES (?,?,?,?,?,?,?,0,0,?)
+        """,
+        (challenge_id, merchant_id, email.lower().strip(), purpose, otp_hash,
+         now.isoformat(timespec="seconds"), expires, new_email),
+    )
+
+
+def get_latest_otp_challenge(conn, email: str, purpose: str) -> dict | None:
+    """Return the most recent unused, unexpired challenge for (email, purpose)."""
+    now = datetime.now(timezone.utc).isoformat(timespec="seconds")
+    row = conn.execute(
+        """
+        SELECT * FROM otp_challenges
+        WHERE email = ? AND purpose = ? AND used = 0 AND expires_at > ?
+        ORDER BY created_at DESC LIMIT 1
+        """,
+        (email.lower().strip(), purpose, now),
+    ).fetchone()
+    return dict(row) if row else None
+
+
+def get_otp_challenge(conn, challenge_id: str) -> dict | None:
+    row = conn.execute(
+        "SELECT * FROM otp_challenges WHERE challenge_id = ?", (challenge_id,)
+    ).fetchone()
+    return dict(row) if row else None
+
+
+def increment_otp_attempts(conn, challenge_id: str) -> int:
+    """Increment attempts counter and return new count."""
+    conn.execute(
+        "UPDATE otp_challenges SET attempts = attempts + 1, last_attempt_at = ? "
+        "WHERE challenge_id = ?",
+        (datetime.now(timezone.utc).isoformat(timespec="seconds"), challenge_id),
+    )
+    row = conn.execute(
+        "SELECT attempts FROM otp_challenges WHERE challenge_id = ?", (challenge_id,)
+    ).fetchone()
+    return row["attempts"] if row else 0
+
+
+def consume_otp_challenge(conn, challenge_id: str) -> None:
+    """Mark an OTP as used (one-time use enforced)."""
+    conn.execute(
+        "UPDATE otp_challenges SET used = 1 WHERE challenge_id = ?", (challenge_id,)
+    )
+
+
+def invalidate_otp_challenges(conn, email: str, purpose: str) -> None:
+    """Mark all outstanding OTPs for (email, purpose) as used — e.g. after success."""
+    conn.execute(
+        "UPDATE otp_challenges SET used = 1 WHERE email = ? AND purpose = ? AND used = 0",
+        (email.lower().strip(), purpose),
+    )
+
+
+# ---------------------------------------------------------------------------
+# Session helpers
+# ---------------------------------------------------------------------------
+
+SESSION_TTL_DAYS = 7
+
+
+def create_session(conn, session_id: str, merchant_id: str,
+                   ip_address: str = None, user_agent: str = None) -> None:
+    """Insert a new session row with 7-day expiry."""
+    now = datetime.now(timezone.utc)
+    expires = (now + __import__('datetime').timedelta(days=SESSION_TTL_DAYS)).isoformat(timespec="seconds")
+    conn.execute(
+        """
+        INSERT INTO sessions
+            (session_id, merchant_id, created_at, expires_at, last_seen_at,
+             ip_address, user_agent, invalidated)
+        VALUES (?,?,?,?,?,?,?,0)
+        """,
+        (session_id, merchant_id,
+         now.isoformat(timespec="seconds"), expires,
+         now.isoformat(timespec="seconds"),
+         ip_address, user_agent),
+    )
+
+
+def get_session(conn, session_id: str) -> dict | None:
+    """Return session row if it exists, is not invalidated, and is not expired."""
+    now = datetime.now(timezone.utc).isoformat(timespec="seconds")
+    row = conn.execute(
+        """
+        SELECT * FROM sessions
+        WHERE session_id = ? AND invalidated = 0 AND expires_at > ?
+        """,
+        (session_id, now),
+    ).fetchone()
+    return dict(row) if row else None
+
+
+def touch_session(conn, session_id: str) -> None:
+    """Update last_seen_at without extending expiry (7-day cap is absolute)."""
+    conn.execute(
+        "UPDATE sessions SET last_seen_at = ? WHERE session_id = ?",
+        (datetime.now(timezone.utc).isoformat(timespec="seconds"), session_id),
+    )
+
+
+def invalidate_session(conn, session_id: str) -> None:
+    """Invalidate a single session (logout)."""
+    conn.execute(
+        "UPDATE sessions SET invalidated = 1 WHERE session_id = ?", (session_id,)
+    )
+
+
+def invalidate_all_sessions(conn, merchant_id: str,
+                             except_session_id: str = None) -> int:
+    """Invalidate all sessions for a merchant (e.g. on password change).
+    Optionally keep one session alive (e.g. the current one after password change).
+    Returns count invalidated."""
+    if except_session_id:
+        cur = conn.execute(
+            "UPDATE sessions SET invalidated = 1 "
+            "WHERE merchant_id = ? AND invalidated = 0 AND session_id != ?",
+            (merchant_id, except_session_id),
+        )
+    else:
+        cur = conn.execute(
+            "UPDATE sessions SET invalidated = 1 "
+            "WHERE merchant_id = ? AND invalidated = 0",
+            (merchant_id,),
+        )
+    return cur.rowcount
+
+
+# ---------------------------------------------------------------------------
+# Security event helpers
+# ---------------------------------------------------------------------------
+
+def log_security_event(conn, merchant_id: str, event_type: str,
+                        ip_address: str = None, user_agent: str = None,
+                        detail: str = None) -> None:
+    """Append a security event. Never stores passwords, OTP values, or tokens."""
+    conn.execute(
+        """
+        INSERT INTO security_events
+            (merchant_id, event_type, ip_address, user_agent, detail, created_at)
+        VALUES (?,?,?,?,?,?)
+        """,
+        (merchant_id, event_type, ip_address, user_agent, detail,
+         datetime.now(timezone.utc).isoformat(timespec="seconds")),
+    )
+
+
+def get_security_events(conn, merchant_id: str, limit: int = 50) -> list:
+    rows = conn.execute(
+        "SELECT * FROM security_events WHERE merchant_id = ? "
+        "ORDER BY created_at DESC LIMIT ?",
+        (merchant_id, limit),
+    ).fetchall()
+    return [dict(r) for r in rows]
+
+
+# ---------------------------------------------------------------------------
+# Notification preference helpers
+# ---------------------------------------------------------------------------
+
+def get_or_create_notification_prefs(conn, merchant_id: str) -> dict:
+    """Return existing preferences or create defaults."""
+    row = conn.execute(
+        "SELECT * FROM notification_preferences WHERE merchant_id = ?",
+        (merchant_id,),
+    ).fetchone()
+    if row:
+        return dict(row)
+    now = datetime.now(timezone.utc).isoformat(timespec="seconds")
+    conn.execute(
+        """
+        INSERT OR IGNORE INTO notification_preferences
+            (merchant_id, recovery_escalations, anomaly_alerts,
+             policy_recommendations, system_failures, weekly_digest, updated_at)
+        VALUES (?,1,1,1,1,1,?)
+        """,
+        (merchant_id, now),
+    )
+    row = conn.execute(
+        "SELECT * FROM notification_preferences WHERE merchant_id = ?",
+        (merchant_id,),
+    ).fetchone()
+    return dict(row) if row else {}
+
+
+def update_notification_prefs(conn, merchant_id: str, **prefs) -> None:
+    allowed_keys = {
+        "recovery_escalations", "anomaly_alerts",
+        "policy_recommendations", "system_failures", "weekly_digest",
+    }
+    updates = {k: (1 if v else 0) for k, v in prefs.items() if k in allowed_keys}
+    if not updates:
+        return
+    updates["updated_at"] = datetime.now(timezone.utc).isoformat(timespec="seconds")
+    assignments = ", ".join(f"{k} = ?" for k in updates)
+    conn.execute(
+        f"UPDATE notification_preferences SET {assignments} WHERE merchant_id = ?",
+        list(updates.values()) + [merchant_id],
+    )
+
+
+# ---------------------------------------------------------------------------
+# Notification record helpers
+# ---------------------------------------------------------------------------
+
+def create_notification_record(conn, record_id: str, email_to: str,
+                                 email_type: str, subject: str,
+                                 merchant_id: str = None,
+                                 provider: str = "simulated") -> None:
+    conn.execute(
+        """
+        INSERT INTO notification_records
+            (record_id, merchant_id, email_to, email_type, subject,
+             status, provider, created_at)
+        VALUES (?,?,?,?,?,'QUEUED',?,?)
+        """,
+        (record_id, merchant_id, email_to, email_type, subject, provider,
+         datetime.now(timezone.utc).isoformat(timespec="seconds")),
+    )
+
+
+def update_notification_record(conn, record_id: str, status: str,
+                                 failure_reason: str = None) -> None:
+    now = datetime.now(timezone.utc).isoformat(timespec="seconds")
+    sent_at = now if status == "SENT" else None
+    conn.execute(
+        """
+        UPDATE notification_records
+        SET status = ?, failure_reason = ?, sent_at = ?
+        WHERE record_id = ?
+        """,
+        (status, failure_reason, sent_at, record_id),
+    )
+
+
+def get_notification_records(conn, merchant_id: str, limit: int = 50) -> list:
+    rows = conn.execute(
+        "SELECT * FROM notification_records WHERE merchant_id = ? "
+        "ORDER BY created_at DESC LIMIT ?",
+        (merchant_id, limit),
+    ).fetchall()
+    return [dict(r) for r in rows]

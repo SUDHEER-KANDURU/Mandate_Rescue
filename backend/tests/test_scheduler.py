@@ -144,13 +144,38 @@ def test_schedule_attempt1_due_immediately(single_case_db):
     jobs = sorted(db.get_jobs_for_case(single_case_db, "SCHED001"),
                   key=lambda j: j["attempt_number"])
     now = datetime.now(timezone.utc)
-    # Attempt 1 should be scheduled within 5 seconds of now (immediately).
     attempt1_time = datetime.fromisoformat(jobs[0]["scheduled_at"].replace("Z", "+00:00"))
-    # strip tz if naive
     if attempt1_time.tzinfo is None:
         attempt1_time = attempt1_time.replace(tzinfo=timezone.utc)
+
+    # Phase 6.5: For insufficient_funds cases, attempt 1 is now scheduled at
+    # the salary-window start (≥25h from now) so the debit is timed for when
+    # funds are most likely available. This is the intended behaviour.
+    # The scheduled time must be in the future and at most ~7 days away.
+    delta_s = (attempt1_time - now).total_seconds()
+    assert delta_s > 0, "Attempt 1 scheduled_at must be in the future"
+    assert delta_s < 7 * 24 * 3600, "Attempt 1 should be within 7 days"
+
+
+def test_schedule_attempt1_timing_bank_technical_error(single_case_db):
+    """For bank_technical_error, attempt 1 should be scheduled immediately (not salary-window)."""
+    single_case_db.execute(
+        "UPDATE mandate_failures SET failure_reason='bank_technical_error' "
+        "WHERE customer_id='SCHED001'")
+    single_case_db.commit()
+    case = db.get_case(single_case_db, "SCHED001")
+    sched.schedule_recovery_jobs(
+        single_case_db, case, ExecutionMode.SIMULATION, max_retries=3)
+    single_case_db.commit()
+    jobs = sorted(db.get_jobs_for_case(single_case_db, "SCHED001"),
+                  key=lambda j: j["attempt_number"])
+    now = datetime.now(timezone.utc)
+    attempt1_time = datetime.fromisoformat(jobs[0]["scheduled_at"].replace("Z", "+00:00"))
+    if attempt1_time.tzinfo is None:
+        attempt1_time = attempt1_time.replace(tzinfo=timezone.utc)
+    # bank_technical_error attempt 1 = 0 delay → should be ≤60s from now
     assert abs((attempt1_time - now).total_seconds()) < 60, \
-        "Attempt 1 should be scheduled near-immediately"
+        "bank_technical_error attempt 1 should be scheduled near-immediately"
 
 
 # ---------------------------------------------------------------------------

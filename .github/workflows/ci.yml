@@ -67,8 +67,4 @@ jobs:
           WEBHOOK_SECRET: ci-test-webhook-secret-not-for-real-use-0123456789abcdef
         run: python backend/chaos_test.py
 
-      # --- Reproducible benchmark (3 strategies × 10 runs, real computed results)
-      - name: Run benchmark CLI (reproducible strategy comparison)
-        env:
-          WEBHOOK_SECRET: ci-test-webhook-secret-not-for-real-use-0123456789abcdef
-        run: python benchmark.py --n-runs 10 --seed 42
+

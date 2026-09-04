@@ -72,7 +72,7 @@ def test_duplicate_webhook_returns_already_processed(client):
     assert body["status"] == "already_processed"
     assert body["ok"] is True
 
-    cases = client.get("/api/cases").get_json()
+    cases = client.get("/api/cases").get_json()["cases"]
     matching = [c for c in cases if c["customer_id"] == "CUSTIDEM1"]
     assert len(matching) == 1
 

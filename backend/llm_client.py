@@ -6,19 +6,40 @@ dunning stage are all computed by the rule-based code and passed in here as grou
 truth. The LLM only turns those real facts into readable prose.
 
 Design goals:
-- Groq (OpenAI-compatible) chat-completions endpoint, key from env GROQ_API_KEY.
+- Multi-provider fallback chain: tries each configured provider in order and moves
+  to the next one automatically on rate-limit, timeout, or any failure. Falls back
+  to deterministic templates only when every provider is exhausted.
 - Zero extra pip dependencies: uses urllib so the demo runs on a stock Flask install.
 - Graceful degradation: any error/timeout falls back to the existing template text,
   so a network hiccup never breaks the demo.
 - Response cache keyed by (case_id, type) so re-running the agent during testing does
   not burn API calls on cases we've already generated for.
 
-If GROQ_API_KEY is unset, every call transparently returns the template fallback.
+Provider configuration (.env):
+  # --- Groq (fast, generous free tier) ---
+  GROQ_API_KEY=gsk_...
+  # GROQ_MODEL=llama3-8b-8192         # optional override
+
+  # --- NVIDIA NIM (fallback when Groq is rate-limited) ---
+  NVIDIA_API_KEY=nvapi-...
+  # NVIDIA_MODEL=meta/llama-3.1-8b-instruct  # optional override
+
+  # --- OpenAI (tertiary fallback) ---
+  # OPENAI_API_KEY=sk-...
+  # OPENAI_MODEL=gpt-4o-mini          # optional override
+
+  # --- Legacy single-provider override (still respected if set) ---
+  # LLM_API_BASE=...   overrides the primary provider base URL
+  # LLM_MODEL=...      overrides the primary provider model
+
+The chain is built at import time from whichever keys are present in the environment.
+If no key is found, every call transparently returns the template fallback.
 """
 
 import json
 import logging
 import os
+import threading
 import time
 import urllib.error
 import urllib.request
@@ -31,19 +52,94 @@ import messaging
 # instead of vanishing silently.
 log = logging.getLogger("mandate_rescue.llm")
 
-# --- Configuration ----------------------------------------------------------
+# --- Provider chain ---------------------------------------------------------
+# Each entry is a (name, api_url, model, api_key) tuple. Built once at import time
+# from whichever keys are present in the environment. Providers are tried in order;
+# if the primary fails (rate-limit, timeout, any error), the next is tried
+# automatically before falling back to deterministic templates.
+#
+# Default order: Groq → NVIDIA NIM → OpenAI
+# Change the priority by setting LLM_PROVIDER_ORDER=nvidia,groq,openai in .env.
 
-# OpenAI-compatible endpoint. Groq's default is the one below; override via env t
-# point at any OpenAI-compatible server (e.g. OpenAI itself) without code changes.
-API_BASE = os.environ.get("LLM_API_BASE", "https://api.groq.com/openai/v1")
-API_URL = API_BASE.rstrip("/") + "/chat/completions"
+_PROVIDER_DEFAULTS = {
+    "groq": {
+        "base": "https://api.groq.com/openai/v1",
+        "model": "openai/gpt-oss-20b",
+        "key_env": "GROQ_API_KEY",
+    },
+    "nvidia": {
+        "base": "https://integrate.api.nvidia.com/v1",
+        "model": "meta/llama-3.2-11b-vision-instruct",
+        "key_env": "NVIDIA_API_KEY",
+    },
+    "openai": {
+        "base": "https://api.openai.com/v1",
+        "model": "gpt-4o-mini",
+        "key_env": "OPENAI_API_KEY",
+    },
+}
 
-# A fast, inexpensive instruct model is plenty for one-paragraph narration.
-# openai/gpt-oss-20b is the standard fast model available on GroqCloud.
-# Override via LLM_MODEL env var to point at any OpenAI-compatible model
-# (e.g. LLM_MODEL=gpt-4o-mini for OpenAI, LLM_MODEL=llama-3.3-70b-versatile
-# for accounts with Llama access).
-MODEL = os.environ.get("LLM_MODEL", "llama3-8b-8192")
+# Allow the user to set a custom order, e.g. LLM_PROVIDER_ORDER=groq,nvidia
+_provider_order_env = os.environ.get("LLM_PROVIDER_ORDER", "nvidia,groq,openai")
+_provider_order = [p.strip().lower() for p in _provider_order_env.split(",")]
+
+
+def _build_provider_chain():
+    """Return list of (name, url, model, key) for every provider with a key set."""
+    chain = []
+    for name in _provider_order:
+        cfg = _PROVIDER_DEFAULTS.get(name)
+        if not cfg:
+            continue
+        key = os.environ.get(cfg["key_env"])
+        if not key:
+            continue
+        # Per-provider model override, e.g. GROQ_MODEL or NVIDIA_MODEL
+        model_env_key = f"{name.upper()}_MODEL"
+        model = os.environ.get(model_env_key, cfg["model"])
+        base = cfg["base"]
+        url = base.rstrip("/") + "/chat/completions"
+        chain.append((name, url, model, key))
+
+    # Legacy single-provider override: if LLM_API_BASE is set it takes the slot of
+    # the first entry (or creates one) using LLM_MODEL and whichever key is available.
+    legacy_base = os.environ.get("LLM_API_BASE")
+    legacy_model = os.environ.get("LLM_MODEL")
+    if legacy_base:
+        legacy_key = (
+            os.environ.get("GROQ_API_KEY")
+            or os.environ.get("NVIDIA_API_KEY")
+            or os.environ.get("OPENAI_API_KEY")
+        )
+        if legacy_key:
+            legacy_url = legacy_base.rstrip("/") + "/chat/completions"
+            legacy_m = legacy_model or "llama3-8b-8192"
+            # Prepend so the explicit override always goes first.
+            chain.insert(0, ("custom", legacy_url, legacy_m, legacy_key))
+
+    return chain
+
+
+# Module-level chain, built once at import. Tests may call _build_provider_chain()
+# again after patching env vars, but normal usage reads this directly.
+_PROVIDER_CHAIN = _build_provider_chain()
+
+# Expose a stable API_URL / MODEL / _api_key() for any code that imported them
+# directly (backward compatibility). They reflect the first provider in the chain.
+if _PROVIDER_CHAIN:
+    _primary = _PROVIDER_CHAIN[0]
+    API_BASE = _primary[1].rsplit("/chat", 1)[0]
+    API_URL = _primary[1]
+    MODEL = _primary[2]
+else:
+    API_BASE = "https://api.groq.com/openai/v1"
+    API_URL = API_BASE + "/chat/completions"
+    MODEL = "llama3-8b-8192"
+
+
+def _api_key():
+    """Return the primary provider's key, or None if no provider is configured."""
+    return _PROVIDER_CHAIN[0][3] if _PROVIDER_CHAIN else None
 
 # Short timeout: this is decoration on top of a working system, so we would rather
 # fall back to templates quickly than make the UI wait on a slow call.
@@ -71,21 +167,24 @@ ERR_NO_KEY = "no_key"
 # Reasons we treat as transient and therefore worth retrying.
 _TRANSIENT = frozenset({ERR_RATE_LIMIT, ERR_TIMEOUT, ERR_NETWORK})
 
+# --- Thread-safe global state -----------------------------------------------
+# Flask dev-server runs with threaded=True; the LLM globals are written by the
+# agent stream thread and read by concurrent drawer/ask request threads.
+# Protect every write AND read of _LAST_ERROR, _SUPPRESS_LLM, _LIVE_BUDGET with
+# this lock so no thread ever sees a torn/partial update.
+_state_lock = threading.Lock()
+
 # The most recent low-level failure reason (one of the ERR_* codes), or None on
-# success. Set by _chat(); read by translate_query() so /api/ask can distinguish a
-# transient outage from a genuinely unclear question. Not thread-safe by design --
-# this is a single-worker demo; a multi-worker deploy would thread this through
-# return values instead.
+# success. Set by _chat(); read by translate_query().
 _LAST_ERROR = None
 
 
 def last_error():
     """Return the most recent _chat failure code (ERR_*), or None after a success."""
-    return _LAST_ERROR
+    with _state_lock:
+        return _LAST_ERROR
 
-# API key is read from the environment only. Never hardcode it.
-def _api_key():
-    return os.environ.get("GROQ_API_KEY") or os.environ.get("OPENAI_API_KEY")
+# API key lookup is handled by the provider chain above.
 
 
 # --- Response cache ---------------------------------------------------------
@@ -104,24 +203,47 @@ _SUPPRESS_LLM = False   # set by set_live_budget([], suppress=True)
 
 
 def set_live_budget(case_ids, suppress=False):
-    """Restrict live LLM generation.
+    """Restrict live LLM generation (thread-safe).
 
-    - case_ids=None, suppress=False: no restriction — every case may use the LLM
-      (default, used by drawer/ask endpoints).
+    - case_ids=None, suppress=False: no restriction — every case may use the LLM.
     - case_ids=<iterable>, suppress=False: only these case_ids may use the LLM.
-    - suppress=True (regardless of case_ids): suppress ALL LLM calls — every call
-      falls back to templates. Used by benchmark / Monte Carlo runs.
+    - suppress=True: suppress ALL LLM calls. Used by benchmark / Monte Carlo runs.
+
+    Returns a (budget_snapshot, suppress_snapshot) tuple so callers can restore
+    the previous state without accessing private globals directly.
     """
     global _LIVE_BUDGET, _SUPPRESS_LLM
-    _SUPPRESS_LLM = suppress
-    _LIVE_BUDGET = None if case_ids is None else set(str(c) for c in case_ids)
+    new_budget = None if case_ids is None else set(str(c) for c in case_ids)
+    with _state_lock:
+        old = (_LIVE_BUDGET, _SUPPRESS_LLM)
+        _SUPPRESS_LLM = suppress
+        _LIVE_BUDGET = new_budget
+    return old
+
+
+def save_llm_state():
+    """Return a snapshot of the current budget state for later restore."""
+    with _state_lock:
+        return (_LIVE_BUDGET, _SUPPRESS_LLM)
+
+
+def restore_llm_state(snapshot):
+    """Restore a budget state previously saved with save_llm_state()."""
+    global _LIVE_BUDGET, _SUPPRESS_LLM
+    budget, suppress = snapshot
+    with _state_lock:
+        _LIVE_BUDGET = budget
+        _SUPPRESS_LLM = suppress
 
 
 def _llm_allowed(case_id):
     """True if this case may hit the live LLM (always true when no budget is set)."""
-    if _SUPPRESS_LLM:
+    with _state_lock:
+        suppress = _SUPPRESS_LLM
+        budget = _LIVE_BUDGET
+    if suppress:
         return False
-    return (_LIVE_BUDGET is None) or (str(case_id) in _LIVE_BUDGET)
+    return (budget is None) or (str(case_id) in budget)
 
 
 def _cache_key(case_id, kind, *extra):
@@ -183,68 +305,83 @@ def _attempt_once(req):
 
 
 def _chat(system_prompt, user_prompt, max_tokens=320, temperature=0.4):
-    """Call the chat-completions endpoint, with retry on transient failures.
+    """Call the chat-completions endpoint with automatic provider failover.
 
-    Returns the text on success, or None on failure. On failure, the specific reason
-    is recorded in module-level `_LAST_ERROR` (readable via last_error()) and logged
-    server-side, so callers can degrade gracefully while the real cause is preserved.
+    Tries each provider in _PROVIDER_CHAIN in order. Within a single provider,
+    transient failures (HTTP 429, 5xx, timeout) are retried with backoff. If the
+    provider is exhausted (rate-limited or down), the next provider in the chain is
+    tried immediately — no extra sleep between providers.
 
-    Transient failures (HTTP 429, HTTP 5xx, timeouts, network errors) are retried up
-    to LLM_MAX_ATTEMPTS times with exponential backoff. Non-transient failures (auth
-    errors, malformed responses) fail fast with no retry.
+    Returns the text on success, or None when every provider has been exhausted.
+    On failure the specific reason is recorded in _LAST_ERROR and logged server-side.
     """
     global _LAST_ERROR
-    key = _api_key()
-    if not key:
-        _LAST_ERROR = ERR_NO_KEY
+
+    if not _PROVIDER_CHAIN:
+        with _state_lock:
+            _LAST_ERROR = ERR_NO_KEY
         return None
 
-    payload = {
-        "model": MODEL,
-        "messages": [
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": user_prompt},
-        ],
-        "max_tokens": max_tokens,
-        "temperature": temperature,
-    }
-    data = json.dumps(payload).encode("utf-8")
-    req = urllib.request.Request(
-        API_URL,
-        data=data,
-        headers={
-            "Authorization": f"Bearer {key}",
-            "Content-Type": "application/json",
-            # Groq's Cloudflare edge rejects the default urllib User-Agent with a
-            # 403 (error 1010), so send an explicit one.
-            "User-Agent": "MandateRescue/1.0",
-        },
-        method="POST",
-    )
-
-    last_code = None
-    for attempt in range(1, LLM_MAX_ATTEMPTS + 1):
-        text, code = _attempt_once(req)
-        if text is not None:
-            _LAST_ERROR = None
-            return text
-        last_code = code
-        # Rate-limit: use the lower retry cap to fail fast and save latency.
-        # Other transient errors: use the full retry budget.
-        max_for_this_error = (
-            LLM_MAX_ATTEMPTS_RATE_LIMIT if code == ERR_RATE_LIMIT else LLM_MAX_ATTEMPTS
+    last_code = ERR_NO_KEY
+    for provider_name, provider_url, provider_model, provider_key in _PROVIDER_CHAIN:
+        payload = {
+            "model": provider_model,
+            "messages": [
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_prompt},
+            ],
+            "max_tokens": max_tokens,
+            "temperature": temperature,
+        }
+        data = json.dumps(payload).encode("utf-8")
+        req = urllib.request.Request(
+            provider_url,
+            data=data,
+            headers={
+                "Authorization": f"Bearer {provider_key}",
+                "Content-Type": "application/json",
+                # Groq's Cloudflare edge rejects the default urllib User-Agent
+                # with a 403 (error 1010), so send an explicit one.
+                "User-Agent": "MandateRescue/1.0",
+            },
+            method="POST",
         )
-        if code in _TRANSIENT and attempt < max_for_this_error:
-            backoff = LLM_BACKOFF_BASE * (2 ** (attempt - 1))
-            log.info("LLM transient failure (%s), retry %d/%d after %.2fs",
-                     code, attempt, max_for_this_error - 1, backoff)
-            time.sleep(backoff)
-            continue
-        break
 
-    _LAST_ERROR = last_code
-    log.warning("LLM call failed after %d attempt(s); final reason=%s",
-                attempt, last_code)
+        for attempt in range(1, LLM_MAX_ATTEMPTS + 1):
+            text, code = _attempt_once(req)
+            if text is not None:
+                with _state_lock:
+                    _LAST_ERROR = None
+                if provider_name != (_PROVIDER_CHAIN[0][0] if _PROVIDER_CHAIN else ""):
+                    log.info("LLM: succeeded via fallback provider '%s'", provider_name)
+                return text
+
+            last_code = code
+            # Rate-limit: use the lower retry cap to fail fast and try the next
+            # provider instead of waiting out the rate-limit window here.
+            max_for_this_error = (
+                LLM_MAX_ATTEMPTS_RATE_LIMIT if code == ERR_RATE_LIMIT
+                else LLM_MAX_ATTEMPTS
+            )
+            if code in _TRANSIENT and attempt < max_for_this_error:
+                backoff = LLM_BACKOFF_BASE * (2 ** (attempt - 1))
+                log.info(
+                    "LLM[%s] transient failure (%s), retry %d/%d after %.2fs",
+                    provider_name, code, attempt, max_for_this_error - 1, backoff,
+                )
+                time.sleep(backoff)
+                continue
+            break  # non-transient or retries exhausted for this provider
+
+        log.warning(
+            "LLM[%s] exhausted after %d attempt(s) (reason=%s); trying next provider",
+            provider_name, attempt, last_code,
+        )
+
+    # Every provider failed.
+    with _state_lock:
+        _LAST_ERROR = last_code
+    log.warning("LLM: all providers exhausted; final reason=%s", last_code)
     return None
 
 

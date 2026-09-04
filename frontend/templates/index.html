@@ -8,6 +8,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='auth.css') }}">
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"
           integrity="sha384-9nhczxUqK87bcKHh20fSQcTGD4qq5GhayNYSYWqwBkINBhOfQLg/P5HG5lF1urn4"
           crossorigin="anonymous"></script>
@@ -255,9 +256,292 @@
         </svg>
         Export
       </a>
+
+      <!-- Profile avatar button -->
+      <button class="profile-avatar-btn" id="btn-open-profile"
+              aria-label="Open profile menu" title="Profile & settings"
+              aria-expanded="false" aria-controls="profile-panel">
+        <span id="profile-avatar-initials">?</span>
+      </button>
+
     </div>
 
   </header>
+
+  <!-- ============================================================
+       PROFILE PANEL (slide-in from right)
+       ============================================================ -->
+  <div class="profile-panel-overlay" id="profile-overlay" aria-hidden="true"></div>
+
+  <aside class="profile-panel" id="profile-panel" role="complementary"
+         aria-label="Profile and settings" aria-hidden="true">
+
+    <div class="profile-panel-header">
+      <span class="profile-panel-title">Account</span>
+      <button class="profile-close-btn" id="btn-close-profile" aria-label="Close profile panel">
+        <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+          <path d="M3 3l10 10M13 3L3 13" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+        </svg>
+      </button>
+    </div>
+
+    <div class="profile-tabs" role="tablist">
+      <button class="profile-tab active" role="tab" data-profile-tab="profile"
+              aria-selected="true">Profile</button>
+      <button class="profile-tab" role="tab" data-profile-tab="security"
+              aria-selected="false">Security</button>
+      <button class="profile-tab" role="tab" data-profile-tab="notifications"
+              aria-selected="false">Notifications</button>
+    </div>
+
+    <div class="profile-body">
+
+      <!-- ── Profile tab ── -->
+      <div id="ptab-profile" class="profile-tab-content">
+        <div id="profile-banner" class="profile-banner hidden"></div>
+
+        <div class="profile-section">
+          <div class="profile-section-title">Account</div>
+          <div class="profile-row">
+            <span class="profile-row-label">Name</span>
+            <span class="profile-row-value" id="p-full-name">—</span>
+          </div>
+          <div class="profile-row">
+            <span class="profile-row-label">Email</span>
+            <span class="profile-row-value" id="p-email">—</span>
+          </div>
+          <div class="profile-row">
+            <span class="profile-row-label">Email verified</span>
+            <span class="profile-row-value" id="p-verified">—</span>
+          </div>
+          <div class="profile-row">
+            <span class="profile-row-label">Phone</span>
+            <span class="profile-row-value" id="p-phone">—</span>
+          </div>
+          <div class="profile-row">
+            <span class="profile-row-label">Member since</span>
+            <span class="profile-row-value" id="p-created-at">—</span>
+          </div>
+        </div>
+
+        <div class="profile-section">
+          <div class="profile-section-title">Business</div>
+          <div class="profile-row">
+            <span class="profile-row-label">Business name</span>
+            <span class="profile-row-value" id="p-biz-name">—</span>
+          </div>
+          <div class="profile-row">
+            <span class="profile-row-label">Type</span>
+            <span class="profile-row-value" id="p-biz-type">—</span>
+          </div>
+          <div class="profile-row">
+            <span class="profile-row-label">Website</span>
+            <span class="profile-row-value" id="p-website">—</span>
+          </div>
+          <div class="profile-row">
+            <span class="profile-row-label">City</span>
+            <span class="profile-row-value" id="p-city">—</span>
+          </div>
+        </div>
+
+        <!-- Edit profile form (toggled) -->
+        <div id="profile-edit-section" class="hidden">
+          <div class="profile-section-title">Edit profile</div>
+          <form class="profile-edit-form" id="profile-edit-form" novalidate>
+            <div class="form-field">
+              <label class="form-label" for="pe-full-name">Full name</label>
+              <input class="form-input" id="pe-full-name" type="text">
+            </div>
+            <div class="form-field">
+              <label class="form-label" for="pe-phone">Phone</label>
+              <input class="form-input" id="pe-phone" type="tel">
+            </div>
+            <div class="form-field">
+              <label class="form-label" for="pe-biz-name">Business name</label>
+              <input class="form-input" id="pe-biz-name" type="text">
+            </div>
+            <div class="form-field">
+              <label class="form-label" for="pe-biz-website">Website</label>
+              <input class="form-input" id="pe-biz-website" type="url">
+            </div>
+            <div class="form-field">
+              <label class="form-label" for="pe-city">City</label>
+              <input class="form-input" id="pe-city" type="text">
+            </div>
+            <div class="form-field">
+              <label class="form-label" for="pe-state">State</label>
+              <input class="form-input" id="pe-state" type="text">
+            </div>
+            <div style="display:flex;gap:8px;margin-top:4px">
+              <button type="submit" class="btn btn-primary btn-sm" id="btn-save-profile">Save</button>
+              <button type="button" class="btn btn-ghost btn-sm" id="btn-cancel-edit">Cancel</button>
+            </div>
+          </form>
+        </div>
+
+        <div style="display:flex;gap:8px;margin-top:12px" id="profile-view-actions">
+          <button class="btn btn-ghost btn-sm" id="btn-edit-profile">Edit profile</button>
+          <button class="btn btn-danger btn-sm" id="btn-logout-profile">Log out</button>
+        </div>
+
+      </div><!-- /#ptab-profile -->
+
+      <!-- ── Security tab ── -->
+      <div id="ptab-security" class="profile-tab-content hidden">
+        <div id="security-banner" class="profile-banner hidden"></div>
+
+        <!-- Change password -->
+        <div class="profile-section">
+          <div class="profile-section-title">Change password</div>
+
+          <div id="sec-pw-step1">
+            <p style="font-size:13px;color:#94a3b8;margin:0 0 12px">
+              We'll send a one-time code to your email to confirm the change.
+            </p>
+            <button class="btn btn-ghost btn-sm" id="btn-request-pw-change">
+              Send verification code
+            </button>
+          </div>
+
+          <div id="sec-pw-step2" class="hidden">
+            <form class="profile-edit-form" id="change-pw-form" novalidate>
+              <div class="form-field">
+                <label class="form-label" for="cpw-otp">Verification code</label>
+                <input class="form-input otp-input" id="cpw-otp" type="text"
+                       inputmode="numeric" maxlength="6" placeholder="000000">
+                <div class="field-error" id="err-cpw-otp"></div>
+              </div>
+              <div class="form-field">
+                <label class="form-label" for="cpw-new">New password</label>
+                <input class="form-input" id="cpw-new" type="password"
+                       autocomplete="new-password" placeholder="At least 8 characters">
+                <div class="field-error" id="err-cpw-new"></div>
+              </div>
+              <div class="form-field">
+                <label class="form-label" for="cpw-confirm">Confirm new password</label>
+                <input class="form-input" id="cpw-confirm" type="password"
+                       autocomplete="new-password" placeholder="Repeat">
+              </div>
+              <div style="display:flex;gap:8px">
+                <button type="submit" class="btn btn-primary btn-sm" id="btn-confirm-pw-change">Update password</button>
+                <button type="button" class="btn btn-ghost btn-sm" id="btn-cancel-pw-change">Cancel</button>
+              </div>
+            </form>
+          </div>
+        </div>
+
+        <!-- Change email -->
+        <div class="profile-section" style="margin-top:20px">
+          <div class="profile-section-title">Change email address</div>
+          <div id="sec-email-step1">
+            <form class="profile-edit-form" id="change-email-form1" novalidate>
+              <div class="form-field">
+                <label class="form-label" for="ce-new-email">New email address</label>
+                <input class="form-input" id="ce-new-email" type="email" placeholder="new@company.com">
+              </div>
+              <button type="submit" class="btn btn-ghost btn-sm">Send verification code</button>
+            </form>
+          </div>
+          <div id="sec-email-step2" class="hidden">
+            <form class="profile-edit-form" id="change-email-form2" novalidate>
+              <div class="form-field">
+                <label class="form-label" for="ce-otp">Verification code sent to new address</label>
+                <input class="form-input otp-input" id="ce-otp" type="text"
+                       inputmode="numeric" maxlength="6" placeholder="000000">
+              </div>
+              <div style="display:flex;gap:8px">
+                <button type="submit" class="btn btn-primary btn-sm">Confirm email change</button>
+                <button type="button" class="btn btn-ghost btn-sm" id="btn-cancel-email-change">Cancel</button>
+              </div>
+            </form>
+          </div>
+        </div>
+
+        <!-- Recent security events -->
+        <div class="profile-section" style="margin-top:20px">
+          <div class="profile-section-title">Recent security events</div>
+          <div id="security-events-list">
+            <div style="font-size:12px;color:#475569">Loading…</div>
+          </div>
+        </div>
+
+        <!-- Test email -->
+        <div class="profile-section" style="margin-top:20px">
+          <div class="profile-section-title">Email delivery</div>
+          <p style="font-size:12px;color:#94a3b8;margin:0 0 10px">
+            Send a test email to verify your notification delivery is working.
+          </p>
+          <button class="btn btn-ghost btn-sm" id="btn-test-email">Send test email</button>
+          <div id="test-email-result" style="font-size:12px;margin-top:8px;color:#475569"></div>
+        </div>
+
+      </div><!-- /#ptab-security -->
+
+      <!-- ── Notifications tab ── -->
+      <div id="ptab-notifications" class="profile-tab-content hidden">
+        <div id="notif-banner" class="profile-banner hidden"></div>
+        <p style="font-size:12px;color:#64748b;margin:0 0 16px;line-height:1.5">
+          Security emails (OTP, password changes) are always sent and cannot be disabled.
+        </p>
+
+        <div class="notif-toggle-row">
+          <div>
+            <div class="notif-toggle-label">Recovery escalations</div>
+            <div class="notif-toggle-note">When a case is escalated for manual review</div>
+          </div>
+          <label class="toggle-switch">
+            <input type="checkbox" id="notif-recovery-escalations" checked>
+            <span class="toggle-slider"></span>
+          </label>
+        </div>
+        <div class="notif-toggle-row">
+          <div>
+            <div class="notif-toggle-label">Anomaly alerts</div>
+            <div class="notif-toggle-note">When unusual patterns are detected</div>
+          </div>
+          <label class="toggle-switch">
+            <input type="checkbox" id="notif-anomaly-alerts" checked>
+            <span class="toggle-slider"></span>
+          </label>
+        </div>
+        <div class="notif-toggle-row">
+          <div>
+            <div class="notif-toggle-label">Policy recommendations</div>
+            <div class="notif-toggle-note">New data-backed strategy recommendations</div>
+          </div>
+          <label class="toggle-switch">
+            <input type="checkbox" id="notif-policy-recommendations" checked>
+            <span class="toggle-slider"></span>
+          </label>
+        </div>
+        <div class="notif-toggle-row">
+          <div>
+            <div class="notif-toggle-label">System failures</div>
+            <div class="notif-toggle-note">Critical recovery failures requiring attention</div>
+          </div>
+          <label class="toggle-switch">
+            <input type="checkbox" id="notif-system-failures" checked>
+            <span class="toggle-slider"></span>
+          </label>
+        </div>
+        <div class="notif-toggle-row">
+          <div>
+            <div class="notif-toggle-label">Weekly digest</div>
+            <div class="notif-toggle-note">Weekly summary of recovery performance</div>
+          </div>
+          <label class="toggle-switch">
+            <input type="checkbox" id="notif-weekly-digest" checked>
+            <span class="toggle-slider"></span>
+          </label>
+        </div>
+
+        <button class="btn btn-primary btn-sm" id="btn-save-notif-prefs" style="margin-top:20px">
+          Save preferences
+        </button>
+      </div><!-- /#ptab-notifications -->
+
+    </div><!-- /.profile-body -->
+  </aside><!-- /#profile-panel -->
 
 
   <!-- ============================================================
@@ -1322,3 +1606,7 @@
 <script src="{{ url_for('static', filename='app.js') }}"></script>
 </body>
 </html>
+
+<!-- Profile panel JS — loaded after app.js -->
+<script src="{{ url_for('static', filename='auth.js') }}"></script>
+<script src="{{ url_for('static', filename='profile.js') }}"></script>

@@ -1,0 +1,120 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Login — Mandate Rescue</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='auth.css') }}">
+</head>
+<body class="auth-body">
+
+<div class="auth-wrap">
+  <div class="auth-card">
+
+    <!-- Brand -->
+    <div class="auth-brand">
+      <div class="auth-logo-mark" aria-hidden="true">
+        <svg viewBox="0 0 20 20" xmlns="http://www.w3.org/2000/svg">
+          <path d="M11 2L3 12h7l-1 6 9-10h-7l1-6z"/>
+        </svg>
+      </div>
+      <span class="auth-brand-name">Mandate Rescue</span>
+    </div>
+
+    <h1 class="auth-title">Welcome back</h1>
+    <p class="auth-subtitle">Sign in to your merchant account</p>
+
+    <!-- Error / success banner -->
+    <div id="auth-banner" class="auth-banner hidden" role="alert"></div>
+
+    <form id="login-form" novalidate autocomplete="on">
+      <div class="form-field">
+        <label class="form-label" for="login-email">Email address</label>
+        <input class="form-input" id="login-email" type="email"
+               name="email" autocomplete="email"
+               placeholder="you@company.com" required>
+        <div class="field-error" id="err-email"></div>
+      </div>
+
+      <div class="form-field">
+        <label class="form-label" for="login-password">
+          Password
+          <a href="/forgot-password" class="form-label-link">Forgot password?</a>
+        </label>
+        <div class="input-with-toggle">
+          <input class="form-input" id="login-password" type="password"
+                 name="password" autocomplete="current-password"
+                 placeholder="••••••••" required>
+          <button type="button" class="toggle-pw" aria-label="Toggle password visibility"
+                  data-target="login-password">
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+              <ellipse cx="8" cy="8" rx="5.5" ry="3.5" stroke="currentColor" stroke-width="1.4"/>
+              <circle cx="8" cy="8" r="1.5" fill="currentColor"/>
+            </svg>
+          </button>
+        </div>
+        <div class="field-error" id="err-password"></div>
+      </div>
+
+      <button type="submit" class="btn btn-primary btn-auth" id="btn-login">
+        <span class="btn-label">Sign in</span>
+        <span class="btn-spinner hidden" aria-hidden="true"></span>
+      </button>
+    </form>
+
+    <p class="auth-footer-link">
+      Don't have an account? <a href="/register">Create account</a>
+    </p>
+
+  </div><!-- /.auth-card -->
+</div>
+
+<script src="{{ url_for('static', filename='auth.js') }}"></script>
+<script>
+(function() {
+  'use strict';
+  const form    = document.getElementById('login-form');
+  const banner  = document.getElementById('auth-banner');
+  const btnEl   = document.getElementById('btn-login');
+
+  form.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    clearBanner(banner);
+    setLoading(btnEl, true);
+
+    const email    = document.getElementById('login-email').value.trim();
+    const password = document.getElementById('login-password').value;
+
+    if (!email || !password) {
+      showBanner(banner, 'Email and password are required.', 'error');
+      setLoading(btnEl, false);
+      return;
+    }
+
+    try {
+      const resp = await fetch('/api/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, password }),
+      });
+      const body = await resp.json();
+      if (resp.ok && body.ok) {
+        showBanner(banner, 'Login successful. Redirecting…', 'success');
+        setTimeout(() => { window.location.href = '/'; }, 600);
+      } else {
+        showBanner(banner, body.message || 'Login failed.', 'error');
+        setLoading(btnEl, false);
+      }
+    } catch (err) {
+      showBanner(banner, 'Network error. Please try again.', 'error');
+      setLoading(btnEl, false);
+    }
+  });
+})();
+</script>
+</body>
+</html>

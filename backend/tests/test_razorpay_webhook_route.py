@@ -79,7 +79,7 @@ def test_webhook_accepts_valid_signature_and_creates_case(client):
     # signature, not the internal mutation gate) — but the case it created must
     # show up through the normal, key-gated read path.
     resp2 = client.get("/api/cases")
-    ids = [c["customer_id"] for c in resp2.get_json()]
+    ids = [c["customer_id"] for c in resp2.get_json()["cases"]]
     assert "CUSTROUTE1" in ids
 
 

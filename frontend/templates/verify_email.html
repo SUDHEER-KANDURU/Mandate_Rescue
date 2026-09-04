@@ -1,0 +1,179 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Verify Email — Mandate Rescue</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='auth.css') }}">
+</head>
+<body class="auth-body">
+
+<div class="auth-wrap">
+  <div class="auth-card">
+
+    <div class="auth-brand">
+      <div class="auth-logo-mark" aria-hidden="true">
+        <svg viewBox="0 0 20 20" xmlns="http://www.w3.org/2000/svg">
+          <path d="M11 2L3 12h7l-1 6 9-10h-7l1-6z"/>
+        </svg>
+      </div>
+      <span class="auth-brand-name">Mandate Rescue</span>
+    </div>
+
+    <div class="verify-icon" aria-hidden="true">
+      <svg width="48" height="48" viewBox="0 0 48 48" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <circle cx="24" cy="24" r="22" stroke="#6366f1" stroke-width="2"/>
+        <path d="M12 24l8 8 16-16" stroke="#6366f1" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+      </svg>
+    </div>
+
+    <h1 class="auth-title">Check your inbox</h1>
+    <p class="auth-subtitle" id="verify-subtitle">
+      We sent a 6-digit code to <strong id="verify-email-display">your email</strong>.
+      Enter it below to activate your account.
+    </p>
+
+    <div id="auth-banner" class="auth-banner hidden" role="alert"></div>
+
+    <form id="verify-form" novalidate>
+      <div class="form-field">
+        <label class="form-label" for="otp-input">Verification code</label>
+        <input class="form-input otp-input" id="otp-input" type="text"
+               inputmode="numeric" pattern="[0-9]{6}" maxlength="6"
+               autocomplete="one-time-code"
+               placeholder="000000" required
+               aria-describedby="otp-hint">
+        <div class="field-hint" id="otp-hint">6-digit code · expires in 10 minutes</div>
+        <div class="field-error" id="err-otp"></div>
+      </div>
+
+      <button type="submit" class="btn btn-primary btn-auth" id="btn-verify">
+        <span class="btn-label">Verify email</span>
+        <span class="btn-spinner hidden" aria-hidden="true"></span>
+      </button>
+    </form>
+
+    <div class="resend-row">
+      Didn't receive the code?
+      <button id="btn-resend" class="link-btn" type="button">Resend code</button>
+      <span id="resend-cooldown" class="cooldown-text hidden"></span>
+    </div>
+
+    <p class="auth-footer-link">
+      <a href="/">← Back to login</a>
+    </p>
+
+  </div>
+</div>
+
+<script src="{{ url_for('static', filename='auth.js') }}"></script>
+<script>
+(function() {
+  'use strict';
+  const params  = new URLSearchParams(window.location.search);
+  const email   = params.get('email') || '';
+  const banner  = document.getElementById('auth-banner');
+  const otpEl   = document.getElementById('otp-input');
+  const btnEl   = document.getElementById('btn-verify');
+  const resendBtn = document.getElementById('btn-resend');
+  const cooldownEl = document.getElementById('resend-cooldown');
+
+  if (email) {
+    document.getElementById('verify-email-display').textContent = email;
+  }
+
+  // Auto-format OTP input: digits only
+  otpEl.addEventListener('input', () => {
+    otpEl.value = otpEl.value.replace(/\D/g, '').slice(0, 6);
+  });
+
+  document.getElementById('verify-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    clearBanner(banner);
+    document.getElementById('err-otp').textContent = '';
+    const otp = otpEl.value.trim();
+    if (otp.length !== 6) {
+      document.getElementById('err-otp').textContent = 'Please enter the 6-digit code.';
+      return;
+    }
+    setLoading(btnEl, true);
+    try {
+      const resp = await fetch('/api/auth/verify-email', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, otp }),
+      });
+      const body = await resp.json();
+      if (resp.ok && body.ok) {
+        showBanner(banner, 'Email verified! Redirecting to login…', 'success');
+        setTimeout(() => { window.location.href = '/'; }, 1200);
+      } else {
+        const code = body.error || '';
+        if (code === 'expired') {
+          showBanner(banner, body.message, 'warning');
+        } else if (code === 'too_many_attempts') {
+          showBanner(banner, body.message, 'error');
+          btnEl.disabled = true;
+        } else {
+          document.getElementById('err-otp').textContent = body.message || 'Invalid code.';
+        }
+        setLoading(btnEl, false);
+      }
+    } catch (err) {
+      showBanner(banner, 'Network error. Please try again.', 'error');
+      setLoading(btnEl, false);
+    }
+  });
+
+  // Resend
+  resendBtn.addEventListener('click', async () => {
+    if (!email) return;
+    resendBtn.disabled = true;
+    clearBanner(banner);
+    try {
+      const resp = await fetch('/api/auth/resend-otp', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email }),
+      });
+      const body = await resp.json();
+      if (body.ok) {
+        showBanner(banner, 'A new code has been sent to your email.', 'success');
+        startResendCooldown(60);
+      } else if (body.error === 'cooldown') {
+        showBanner(banner, body.message, 'warning');
+        startResendCooldown(60);
+      } else {
+        showBanner(banner, body.message || 'Could not resend.', 'error');
+        resendBtn.disabled = false;
+      }
+    } catch (err) {
+      showBanner(banner, 'Network error.', 'error');
+      resendBtn.disabled = false;
+    }
+  });
+
+  function startResendCooldown(seconds) {
+    cooldownEl.classList.remove('hidden');
+    resendBtn.classList.add('hidden');
+    let remaining = seconds;
+    const tick = () => {
+      cooldownEl.textContent = `Resend available in ${remaining}s`;
+      if (--remaining <= 0) {
+        cooldownEl.classList.add('hidden');
+        resendBtn.classList.remove('hidden');
+        resendBtn.disabled = false;
+      } else {
+        setTimeout(tick, 1000);
+      }
+    };
+    tick();
+  }
+})();
+</script>
+</body>
+</html>
