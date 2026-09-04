@@ -329,6 +329,8 @@ function renderShapImportance(data) {
     },
     options: {
       indexAxis: "y",
+      responsive: true,
+      maintainAspectRatio: false,
       plugins: {
         legend: { display: false },
         tooltip: { callbacks: { label: (c) => "mean |SHAP| " + Number(c.raw).toFixed(4) } },
@@ -1670,6 +1672,8 @@ const VIEW_TITLES = {
 
 function showView(view) {
   if (!VIEW_IDS.includes(view)) view = "overview";
+  // Hide any p7 view-content panels that may be visible
+  document.querySelectorAll(".view-content").forEach((sec) => sec.classList.add("hidden"));
   document.querySelectorAll(".view").forEach((sec) => {
     sec.classList.toggle("active", sec.dataset.view === view);
   });
@@ -1707,8 +1711,14 @@ function syncViewEmptyStates() {
 }
 
 function initSidebar() {
+  // Only attach showView() to nav items whose data-view is managed by app.js.
+  // Recovery OS items (view-content sections) are handled exclusively by p7.js
+  // via activateView(); attaching showView() to them as well would fall back to
+  // "overview" and stomp the p7 navigation.
   document.querySelectorAll(".nav-item[data-view]").forEach((item) => {
-    item.addEventListener("click", () => showView(item.dataset.view));
+    if (VIEW_IDS.includes(item.dataset.view)) {
+      item.addEventListener("click", () => showView(item.dataset.view));
+    }
   });
   // Wire global search input to open command palette on click/focus
   const globalSearch = document.getElementById("global-search");

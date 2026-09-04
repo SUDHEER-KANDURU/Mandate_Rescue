@@ -1056,7 +1056,9 @@
           <div id="ml-shap-importance" class="ml-shap-importance hidden">
             <div class="section-title" id="ml-shap-title">Feature importance · mean |SHAP|</div>
             <p class="muted ml-shap-cap" id="ml-shap-cap"></p>
-            <canvas id="ml-shap-chart" height="200" role="img" aria-label="SHAP feature importance chart"></canvas>
+            <div class="ml-shap-chart-wrap">
+              <canvas id="ml-shap-chart" role="img" aria-label="SHAP feature importance chart"></canvas>
+            </div>
           </div>
 
           <div class="ml-lower">
@@ -1542,6 +1544,384 @@
       </section><!-- /#view-learning -->>
 
     </div><!-- /#dashboard -->
+
+    <!-- =====================================================================
+         PHASE 7: Revenue Recovery OS View Panels
+         Placed inside <main> so they share the same scroll container, topbar,
+         and CSS layout as all other views. Hidden until a nav item is clicked.
+         ===================================================================== -->
+
+    <!-- COMMAND CENTER -->
+    <section class="view-content hidden" id="view-command-center" data-view="command-center">
+      <div class="page-header">
+        <h1 class="page-title">Command Center</h1>
+        <p class="page-sub">Revenue at risk &rarr; Recovery queue &rarr; Decisions</p>
+        <span class="badge badge-simulated">SIMULATED DATA</span>
+        <button class="btn btn-primary btn-sm" id="btn-load-demo" onclick="P7.loadDemo()">Run Demo Scenario</button>
+      </div>
+
+      <!-- KPI row -->
+      <div class="kpi-grid" id="cc-kpi-grid">
+        <div class="kpi-card critical" id="cc-kpi-risk">
+          <div class="kpi-label">Revenue at Risk</div>
+          <div class="kpi-value" id="cc-revenue-at-risk">&#8212;</div>
+          <div class="kpi-sub">ACTUAL</div>
+        </div>
+        <div class="kpi-card" id="cc-kpi-recoverable">
+          <div class="kpi-label">Recoverable (Est.)</div>
+          <div class="kpi-value" id="cc-recoverable">&#8212;</div>
+          <div class="kpi-sub">ESTIMATED</div>
+        </div>
+        <div class="kpi-card success" id="cc-kpi-recovered">
+          <div class="kpi-label">Recovered Revenue</div>
+          <div class="kpi-value" id="cc-recovered">&#8212;</div>
+          <div class="kpi-sub">ACTUAL</div>
+        </div>
+        <div class="kpi-card" id="cc-kpi-rate">
+          <div class="kpi-label">Recovery Rate</div>
+          <div class="kpi-value" id="cc-rate">&#8212;</div>
+          <div class="kpi-sub">ACTUAL</div>
+        </div>
+        <div class="kpi-card" id="cc-kpi-checkout">
+          <div class="kpi-label">Abandoned Checkouts</div>
+          <div class="kpi-value" id="cc-checkout">&#8212;</div>
+          <div class="kpi-sub">ACTUAL</div>
+        </div>
+        <div class="kpi-card warning" id="cc-kpi-overdue">
+          <div class="kpi-label">Overdue Receivables</div>
+          <div class="kpi-value" id="cc-overdue">&#8212;</div>
+          <div class="kpi-sub">ACTUAL</div>
+        </div>
+        <div class="kpi-card warning" id="cc-kpi-promises">
+          <div class="kpi-label">Missed Promises</div>
+          <div class="kpi-value" id="cc-missed-promises">&#8212;</div>
+          <div class="kpi-sub">ACTUAL</div>
+        </div>
+        <div class="kpi-card" id="cc-kpi-cases">
+          <div class="kpi-label">Active Cases</div>
+          <div class="kpi-value" id="cc-active-cases">&#8212;</div>
+          <div class="kpi-sub">ACTUAL</div>
+        </div>
+      </div>
+
+      <!-- Priority Recovery Queue -->
+      <div class="section-card">
+        <div class="section-card-head">
+          <h2>Priority Recovery Queue</h2>
+          <p class="muted">Highest-value / highest-risk open cases requiring action</p>
+          <button class="btn btn-ghost btn-sm" onclick="P7.loadCommandCenter()">&#8635; Refresh</button>
+        </div>
+        <div id="cc-queue" class="recovery-queue">
+          <div class="empty-state">Loading&hellip;</div>
+        </div>
+      </div>
+
+      <!-- Approvals pending -->
+      <div class="section-card" id="cc-approvals-card">
+        <div class="section-card-head">
+          <h2>Pending Approvals</h2>
+          <p class="muted">Actions requiring your confirmation before execution</p>
+        </div>
+        <div id="cc-approvals-list"></div>
+      </div>
+    </section>
+
+    <!-- REVENUE JOURNEY -->
+    <section class="view-content hidden" id="view-revenue-journey" data-view="revenue-journey">
+      <div class="page-header">
+        <h1 class="page-title">Revenue Journey</h1>
+        <p class="page-sub">End-to-end lifecycle: Payment Intent &rarr; Recovery &rarr; Outcome</p>
+      </div>
+      <div class="journey-container" id="rj-journey">
+        <div class="empty-state">Loading journey&hellip;</div>
+      </div>
+      <div class="section-card" style="margin-top:1.5rem">
+        <div class="section-card-head"><h2>B2B Lifecycle</h2></div>
+        <div class="journey-b2b" id="rj-b2b">
+          <div class="journey-stage">INVOICE</div>
+          <div class="journey-arrow">&darr;</div>
+          <div class="journey-stage">DUE</div>
+          <div class="journey-arrow">&darr;</div>
+          <div class="journey-stage">OVERDUE</div>
+          <div class="journey-arrow">&darr;</div>
+          <div class="journey-stage">REMINDER</div>
+          <div class="journey-arrow">&darr;</div>
+          <div class="journey-stage">PROMISE</div>
+          <div class="journey-arrow">&darr;</div>
+          <div class="journey-stage success-stage">PAYMENT</div>
+          <div class="journey-sep">/</div>
+          <div class="journey-stage warn-stage">ESCALATION</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- RECOVERY CASES -->
+    <section class="view-content hidden" id="view-recovery-cases" data-view="recovery-cases">
+      <div class="page-header">
+        <h1 class="page-title">Recovery Cases</h1>
+        <div class="filter-row">
+          <select id="rc-filter-status" onchange="P7.loadRecoveryCases()">
+            <option value="">All statuses</option>
+            <option value="open">Open</option>
+            <option value="in_progress">In Progress</option>
+            <option value="pending_approval">Pending Approval</option>
+            <option value="recovered">Recovered</option>
+            <option value="failed">Failed</option>
+            <option value="escalated">Escalated</option>
+          </select>
+          <select id="rc-filter-scenario" onchange="P7.loadRecoveryCases()">
+            <option value="">All scenarios</option>
+            <option value="failed_payment">Failed Payment</option>
+            <option value="failed_subscription">Failed Subscription</option>
+            <option value="mandate_retry">Mandate Retry</option>
+            <option value="checkout_abandonment">Checkout Abandonment</option>
+            <option value="b2b_receivable">B2B Receivable</option>
+            <option value="promise_to_pay">Promise to Pay</option>
+            <option value="payment_degradation">Payment Degradation</option>
+          </select>
+          <label><input type="checkbox" id="rc-demo-only" onchange="P7.loadRecoveryCases()"> Demo only</label>
+          <button class="btn btn-ghost btn-sm" onclick="P7.loadRecoveryCases()">&#8635; Refresh</button>
+        </div>
+      </div>
+      <div id="rc-table-wrap">
+        <div class="empty-state">Loading cases&hellip;</div>
+      </div>
+    </section>
+
+    <!-- CASE DETAIL MODAL (unified case view) -->
+    <div id="p7-case-modal" class="p7-modal hidden" role="dialog" aria-modal="true">
+      <div class="p7-modal-inner">
+        <div class="p7-modal-head">
+          <h2 id="p7-case-modal-title">Case Detail</h2>
+          <button class="btn btn-ghost btn-sm" onclick="P7.closeCase()">Close</button>
+        </div>
+        <div id="p7-case-modal-body" class="p7-modal-body"></div>
+      </div>
+    </div>
+    <div id="p7-modal-overlay" class="p7-modal-overlay hidden" onclick="P7.closeCase()"></div>
+
+    <!-- CHECKOUT RECOVERY -->
+    <section class="view-content hidden" id="view-checkout-recovery" data-view="checkout-recovery">
+      <div class="page-header">
+        <h1 class="page-title">Checkout Recovery</h1>
+        <p class="page-sub">Abandoned checkouts &rarr; Recovery link &rarr; Payment completed</p>
+        <span class="badge badge-simulated">SIMULATED</span>
+      </div>
+      <div class="kpi-grid">
+        <div class="kpi-card"><div class="kpi-label">Abandoned</div><div class="kpi-value" id="co-abandoned">&#8212;</div></div>
+        <div class="kpi-card success"><div class="kpi-label">Recovered</div><div class="kpi-value" id="co-recovered">&#8212;</div></div>
+        <div class="kpi-card"><div class="kpi-label">Recovery Rate</div><div class="kpi-value" id="co-rate">&#8212;</div></div>
+        <div class="kpi-card warning"><div class="kpi-label">Value at Risk</div><div class="kpi-value" id="co-value">&#8212;</div></div>
+        <div class="kpi-card"><div class="kpi-label">Estimated Opportunity</div><div class="kpi-value" id="co-opp">&#8212;</div><div class="kpi-sub">ESTIMATED</div></div>
+      </div>
+      <div class="section-card">
+        <div class="section-card-head">
+          <h2>Abandoned Sessions</h2>
+          <button class="btn btn-ghost btn-sm" onclick="P7.loadCheckout()">&#8635; Refresh</button>
+          <button class="btn btn-primary btn-sm" onclick="P7.seedDemoData()">Seed Demo</button>
+        </div>
+        <div id="co-sessions-table"><div class="empty-state">Loading&hellip;</div></div>
+      </div>
+    </section>
+
+    <!-- B2B RECEIVABLES -->
+    <section class="view-content hidden" id="view-b2b-receivables" data-view="b2b-receivables">
+      <div class="page-header">
+        <h1 class="page-title">B2B Receivables</h1>
+        <p class="page-sub">Invoice aging &rarr; Intelligent chase &rarr; Collection</p>
+      </div>
+      <div class="kpi-grid" id="b2b-aging-grid">
+        <div class="kpi-card"><div class="kpi-label">Total Outstanding</div><div class="kpi-value" id="b2b-total">&#8212;</div><div class="kpi-sub">ACTUAL</div></div>
+        <div class="kpi-card success"><div class="kpi-label">0-30 days</div><div class="kpi-value" id="b2b-0-30">&#8212;</div></div>
+        <div class="kpi-card warning"><div class="kpi-label">31-60 days</div><div class="kpi-value" id="b2b-31-60">&#8212;</div></div>
+        <div class="kpi-card critical"><div class="kpi-label">60-90 days</div><div class="kpi-value" id="b2b-61-90">&#8212;</div></div>
+        <div class="kpi-card critical"><div class="kpi-label">90+ days</div><div class="kpi-value" id="b2b-90plus">&#8212;</div></div>
+      </div>
+      <div class="section-card">
+        <div class="section-card-head">
+          <h2>Invoices</h2>
+          <select id="b2b-filter" onchange="P7.loadB2B()">
+            <option value="">All</option>
+            <option value="overdue">Overdue</option>
+            <option value="reminded">Reminded</option>
+            <option value="follow_up">Follow-up</option>
+            <option value="escalated">Escalated</option>
+            <option value="paid">Paid</option>
+          </select>
+          <button class="btn btn-ghost btn-sm" onclick="P7.loadB2B()">&#8635; Refresh</button>
+        </div>
+        <div id="b2b-table"><div class="empty-state">Loading&hellip;</div></div>
+      </div>
+    </section>
+
+    <!-- PROMISES -->
+    <section class="view-content hidden" id="view-promises" data-view="promises">
+      <div class="page-header">
+        <h1 class="page-title">Promise-to-Pay Tracker</h1>
+        <p class="page-sub">Track payment commitments: UPCOMING &rarr; DUE &rarr; PAID / MISSED</p>
+      </div>
+      <div class="kpi-grid">
+        <div class="kpi-card"><div class="kpi-label">Total Promises</div><div class="kpi-value" id="prom-total">&#8212;</div></div>
+        <div class="kpi-card success"><div class="kpi-label">Paid</div><div class="kpi-value" id="prom-paid">&#8212;</div></div>
+        <div class="kpi-card critical"><div class="kpi-label">Missed</div><div class="kpi-value" id="prom-missed">&#8212;</div></div>
+        <div class="kpi-card warning"><div class="kpi-label">Due Today</div><div class="kpi-value" id="prom-due">&#8212;</div></div>
+        <div class="kpi-card"><div class="kpi-label">Conversion Rate</div><div class="kpi-value" id="prom-conv">&#8212;</div><div class="kpi-sub">ACTUAL</div></div>
+      </div>
+      <div class="section-card">
+        <div class="section-card-head">
+          <h2>Payment Promises</h2>
+          <select id="prom-filter" onchange="P7.loadPromises()">
+            <option value="">All</option>
+            <option value="upcoming">Upcoming</option>
+            <option value="due_today">Due Today</option>
+            <option value="missed">Missed</option>
+            <option value="paid">Paid</option>
+          </select>
+          <button class="btn btn-ghost btn-sm" onclick="P7.loadPromises()">&#8635; Refresh</button>
+        </div>
+        <div id="prom-table"><div class="empty-state">Loading&hellip;</div></div>
+      </div>
+    </section>
+
+    <!-- POLICY CENTER -->
+    <section class="view-content hidden" id="view-recovery-policy" data-view="recovery-policy">
+      <div class="page-header">
+        <h1 class="page-title">Recovery Policy Center</h1>
+        <p class="page-sub">Configure retry limits, channels, thresholds and escalation rules</p>
+      </div>
+      <div class="section-card">
+        <div class="section-card-head">
+          <h2>Your Recovery Policy</h2>
+          <button class="btn btn-ghost btn-sm" onclick="P7.loadPolicy()">&#8635; Refresh</button>
+          <button class="btn btn-ghost btn-sm" onclick="P7.resetPolicy()">Reset to defaults</button>
+        </div>
+        <form id="policy-form" onsubmit="P7.savePolicy(event)">
+          <div class="policy-grid">
+            <div class="policy-field">
+              <label>Max Retries <span class="muted">(1-10)</span></label>
+              <input type="number" id="pol-max-retries" min="1" max="10" value="3">
+            </div>
+            <div class="policy-field">
+              <label>Retry Cooldown (hours)</label>
+              <input type="number" id="pol-cooldown" min="1" max="168" value="24">
+            </div>
+            <div class="policy-field">
+              <label>Max Messages / Week</label>
+              <input type="number" id="pol-max-msgs" min="0" max="20" value="3">
+            </div>
+            <div class="policy-field">
+              <label>Preferred Channel</label>
+              <select id="pol-channel">
+                <option value="email">Email</option>
+                <option value="sms">SMS</option>
+                <option value="whatsapp">WhatsApp-ready</option>
+                <option value="in_app">In-App</option>
+              </select>
+            </div>
+            <div class="policy-field">
+              <label>Preferred Language</label>
+              <select id="pol-language">
+                <option value="en">English</option>
+                <option value="hinglish">Hinglish</option>
+                <option value="hi">Hindi</option>
+              </select>
+            </div>
+            <div class="policy-field">
+              <label>Working Hours Start (0-23)</label>
+              <input type="number" id="pol-start" min="0" max="23" value="9">
+            </div>
+            <div class="policy-field">
+              <label>Working Hours End (0-23)</label>
+              <input type="number" id="pol-end" min="0" max="23" value="20">
+            </div>
+            <div class="policy-field">
+              <label>Min Expected Value (Rs)</label>
+              <input type="number" id="pol-min-ev" min="0" value="0">
+            </div>
+            <div class="policy-field">
+              <label>Approval Threshold (Rs)</label>
+              <input type="number" id="pol-approval" min="0" value="10000">
+            </div>
+            <div class="policy-field">
+              <label>Checkout Recovery</label>
+              <select id="pol-checkout">
+                <option value="1">Enabled</option>
+                <option value="0">Disabled</option>
+              </select>
+            </div>
+            <div class="policy-field">
+              <label>B2B Recovery</label>
+              <select id="pol-b2b">
+                <option value="1">Enabled</option>
+                <option value="0">Disabled</option>
+              </select>
+            </div>
+            <div class="policy-field">
+              <label>Voice Recovery</label>
+              <select id="pol-voice">
+                <option value="0">Disabled (no provider)</option>
+                <option value="1">Enabled (provider required)</option>
+              </select>
+            </div>
+          </div>
+          <div class="form-actions">
+            <button type="submit" class="btn btn-primary">Save Policy</button>
+          </div>
+        </form>
+        <div id="policy-save-msg" class="save-msg hidden"></div>
+      </div>
+    </section>
+
+    <!-- COPILOT -->
+    <section class="view-content hidden" id="view-copilot" data-view="copilot">
+      <div class="page-header">
+        <h1 class="page-title">Merchant Copilot</h1>
+        <p class="page-sub">AI assistant grounded in your actual recovery data</p>
+      </div>
+      <div class="copilot-container">
+        <div class="copilot-history" id="copilot-history">
+          <div class="copilot-msg system">
+            <strong>Copilot:</strong> Ask me anything about your recovery data.<br>
+            <em>Examples:</em> "How much revenue is at risk?" &bull; "Why are payments failing?" &bull;
+            "Which strategy performs best?" &bull; "Show me missed promises"
+          </div>
+        </div>
+        <div class="copilot-input-row">
+          <input type="text" id="copilot-input" class="copilot-input"
+                 placeholder="Ask about revenue, recovery, failures, strategy…"
+                 onkeydown="if(event.key==='Enter') P7.askCopilot()">
+          <button class="btn btn-primary" onclick="P7.askCopilot()">Ask</button>
+        </div>
+        <div class="copilot-quicklinks">
+          <button class="btn btn-ghost btn-xs" onclick="P7.copilotQ('How much revenue is at risk?')">Revenue at risk</button>
+          <button class="btn btn-ghost btn-xs" onclick="P7.copilotQ('Why are payments failing?')">Why failing?</button>
+          <button class="btn btn-ghost btn-xs" onclick="P7.copilotQ('Which strategy performs best?')">Best strategy</button>
+          <button class="btn btn-ghost btn-xs" onclick="P7.copilotQ('Show me missed promises')">Missed promises</button>
+          <button class="btn btn-ghost btn-xs" onclick="P7.copilotQ('What are today\'s priority cases?')">Priority cases</button>
+          <button class="btn btn-ghost btn-xs" onclick="P7.copilotQ('How much was recovered this week?')">Recovered revenue</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- DEMO FLOW -->
+    <section class="view-content hidden" id="view-p7-demo" data-view="p7-demo">
+      <div class="page-header">
+        <h1 class="page-title">Demo: Revenue Recovery Flow</h1>
+        <p class="page-sub">Deterministic 10-step demo. All data is <strong>SIMULATED</strong> and isolated from real merchant data.</p>
+        <span class="badge badge-simulated">SIMULATED — Demo data is isolated (is_demo=1)</span>
+      </div>
+      <div class="demo-controls">
+        <button class="btn btn-primary" onclick="P7.runFullDemo()">&#9654; Run Full Demo</button>
+        <button class="btn btn-ghost btn-sm" onclick="P7.resetDemo()">Reset Demo</button>
+      </div>
+      <div id="demo-steps" class="demo-steps">
+        <div class="empty-state">Click "Run Full Demo" to start the recovery scenario</div>
+      </div>
+      <div id="demo-portfolio" class="section-card hidden" style="margin-top:1.5rem">
+        <div class="section-card-head"><h2>Demo Portfolio Summary</h2></div>
+        <div id="demo-portfolio-body"></div>
+      </div>
+    </section>
 
   </main><!-- /.content -->
 

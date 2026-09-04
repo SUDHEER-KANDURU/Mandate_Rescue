@@ -450,19 +450,9 @@ def reset_db(conn=None):
         conn = get_connection()
     try:
         init_db(conn)
-        conn.execute("DELETE FROM audit_log")
-        conn.execute("DELETE FROM state_transitions")
-        conn.execute("DELETE FROM mandate_failures")
-        conn.execute("DELETE FROM webhook_events")
-        conn.execute("DELETE FROM sqlite_sequence WHERE name = 'audit_log'")
-        conn.execute("DELETE FROM sqlite_sequence WHERE name = 'webhook_events'")
-        conn.execute("DELETE FROM sqlite_sequence WHERE name = 'state_transitions'")
-        # Phase 4: also clear recovery jobs so a reset starts with an empty job queue.
-        try:
-            conn.execute("DELETE FROM recovery_jobs")
-        except Exception:
-            pass  # table may not exist yet on very old DB files
-        # Phase 6: clear closed-loop learning tables on reset.
+        # Delete child tables before parent (mandate_failures) to satisfy FK constraints.
+        # Order: most-derived children first, then their parents, then mandate_failures last.
+        # Phase 6 tables that reference mandate_failures or experiments
         for tbl in (
             "policy_audit_log", "policy_performance", "policy_recommendations",
             "policy_versions", "experiment_outcomes", "experiment_assignments",
@@ -472,6 +462,20 @@ def reset_db(conn=None):
                 conn.execute(f"DELETE FROM {tbl}")
             except Exception:
                 pass
+        # Phase 4: clear recovery jobs (FK → mandate_failures)
+        try:
+            conn.execute("DELETE FROM recovery_jobs")
+        except Exception:
+            pass  # table may not exist yet on very old DB files
+        # Core child tables (all FK → mandate_failures)
+        conn.execute("DELETE FROM audit_log")
+        conn.execute("DELETE FROM state_transitions")
+        conn.execute("DELETE FROM webhook_events")
+        # Now safe to delete the parent
+        conn.execute("DELETE FROM mandate_failures")
+        conn.execute("DELETE FROM sqlite_sequence WHERE name = 'audit_log'")
+        conn.execute("DELETE FROM sqlite_sequence WHERE name = 'webhook_events'")
+        conn.execute("DELETE FROM sqlite_sequence WHERE name = 'state_transitions'")
         # Phase 7: clear Phase 7 tables on reset.
         try:
             from phase7_schema import reset_phase7

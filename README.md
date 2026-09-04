@@ -114,8 +114,8 @@ This distinction is critical. Nothing in this project is mislabeled.
 |---|---|---|---|
 | 1 | Log in as merchant | Dashboard overview | REAL — auth system |
 | 2 | Overview tab | Revenue at risk, recovery rate, anomaly alerts | REAL — computed from DB rows |
-| 3 | Send test webhook | `python scripts/send_test_razorpay_webhook.py` | REAL — signature verified, case created |
-| 4 | Cases tab | New case with `razorpay_live` source badge | REAL — from real webhook |
+| 3 | Send test webhook | `python scripts/send_test_razorpay_webhook.py` | CODE PATH REAL (HMAC verified, DB persisted) — requires Razorpay credentials to execute against live Test Mode |
+| 4 | Cases tab | New case with `razorpay_live` source badge | CODE PATH REAL — badge appears when `source=razorpay_live`; requires real webhook delivery to trigger |
 | 5 | Click case → Audit tab | Webhook lifecycle: RECEIVED→VERIFIED→PERSISTED→QUEUED | REAL — DB tracking |
 | 6 | Run agent | Strategy selected, messages generated, recovery scheduled | REAL pipeline + SIMULATED debit outcome |
 | 7 | Case replay | Step-by-step diagnosis → score → strategy → outcome | REAL — stored audit trail |
