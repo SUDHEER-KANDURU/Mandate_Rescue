@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="utf-8">
@@ -11,15 +11,12 @@
   <link rel="stylesheet" href="{{ url_for('static', filename='auth.css') }}">
 </head>
 <body class="auth-body">
-
 <div class="auth-wrap auth-wrap-wide">
   <div class="auth-card auth-card-wide">
 
     <div class="auth-brand">
       <div class="auth-logo-mark" aria-hidden="true">
-        <svg viewBox="0 0 20 20" xmlns="http://www.w3.org/2000/svg">
-          <path d="M11 2L3 12h7l-1 6 9-10h-7l1-6z"/>
-        </svg>
+        <svg viewBox="0 0 20 20" xmlns="http://www.w3.org/2000/svg"><path d="M11 2L3 12h7l-1 6 9-10h-7l1-6z"/></svg>
       </div>
       <span class="auth-brand-name">Mandate Rescue</span>
     </div>
@@ -35,19 +32,16 @@
       <div class="form-grid-2">
         <div class="form-field">
           <label class="form-label" for="r-full-name">Full name <span class="req">*</span></label>
-          <input class="form-input" id="r-full-name" type="text" name="full_name"
-                 autocomplete="name" placeholder="Jane Smith" required>
+          <input class="form-input" id="r-full-name" type="text" name="full_name" autocomplete="name" placeholder="Jane Smith" required>
           <div class="field-error" id="err-full-name"></div>
         </div>
         <div class="form-field">
           <label class="form-label" for="r-phone">Phone number</label>
-          <input class="form-input" id="r-phone" type="tel" name="phone"
-                 autocomplete="tel" placeholder="+91 98765 43210">
+          <input class="form-input" id="r-phone" type="tel" name="phone" autocomplete="tel" placeholder="+91 98765 43210">
         </div>
         <div class="form-field">
           <label class="form-label" for="r-email">Email address <span class="req">*</span></label>
-          <input class="form-input" id="r-email" type="email" name="email"
-                 autocomplete="email" placeholder="you@company.com" required>
+          <input class="form-input" id="r-email" type="email" name="email" autocomplete="email" placeholder="you@company.com" required>
           <div class="field-error" id="err-email"></div>
         </div>
         <div class="form-field">
@@ -62,33 +56,24 @@
           </select>
         </div>
         <div class="form-field form-col-2">
-          <label class="form-label" for="r-addr1">Address line 1</label>
-          <input class="form-input" id="r-addr1" type="text" name="address_line1"
-                 autocomplete="address-line1" placeholder="123 Main Street">
+          <label class="form-label" for="r-addr1">Address</label>
+          <input class="form-input" id="r-addr1" type="text" name="address_line1" autocomplete="address-line1" placeholder="123 Main Street">
         </div>
         <div class="form-field">
           <label class="form-label" for="r-city">City</label>
-          <input class="form-input" id="r-city" type="text" name="city"
-                 autocomplete="address-level2" placeholder="Mumbai">
+          <input class="form-input" id="r-city" type="text" name="city" autocomplete="address-level2" placeholder="Mumbai">
         </div>
         <div class="form-field">
-          <label class="form-label" for="r-state">State / Region</label>
-          <input class="form-input" id="r-state" type="text" name="state_region"
-                 autocomplete="address-level1" placeholder="Maharashtra">
-        </div>
-        <div class="form-field">
-          <label class="form-label" for="r-postal">PIN / Postal code</label>
-          <input class="form-input" id="r-postal" type="text" name="postal_code"
-                 autocomplete="postal-code" placeholder="400001">
+          <label class="form-label" for="r-state">State</label>
+          <input class="form-input" id="r-state" type="text" name="state_region" autocomplete="address-level1" placeholder="Maharashtra">
         </div>
       </div>
 
-      <div class="auth-section-label" style="margin-top:24px">Business information</div>
+      <div class="auth-section-label">Business information</div>
       <div class="form-grid-2">
         <div class="form-field">
-          <label class="form-label" for="r-biz-name">Business / company name <span class="req">*</span></label>
-          <input class="form-input" id="r-biz-name" type="text" name="business_name"
-                 autocomplete="organization" placeholder="Acme Payments Pvt Ltd" required>
+          <label class="form-label" for="r-biz-name">Business name <span class="req">*</span></label>
+          <input class="form-input" id="r-biz-name" type="text" name="business_name" autocomplete="organization" placeholder="Acme Payments Pvt Ltd" required>
           <div class="field-error" id="err-business-name"></div>
         </div>
         <div class="form-field">
@@ -104,26 +89,20 @@
             <option value="other">Other</option>
           </select>
         </div>
-        <div class="form-field">
-          <label class="form-label" for="r-website">Business website</label>
-          <input class="form-input" id="r-website" type="url" name="business_website"
-                 autocomplete="url" placeholder="https://yourcompany.com">
+        <div class="form-field form-col-2">
+          <label class="form-label" for="r-website">Website (optional)</label>
+          <input class="form-input" id="r-website" type="url" name="business_website" autocomplete="url" placeholder="https://yourcompany.com">
         </div>
       </div>
 
-      <div class="auth-section-label" style="margin-top:24px">Account security</div>
+      <div class="auth-section-label">Account security</div>
       <div class="form-grid-2">
         <div class="form-field">
           <label class="form-label" for="r-password">Password <span class="req">*</span></label>
           <div class="input-with-toggle">
-            <input class="form-input" id="r-password" type="password" name="password"
-                   autocomplete="new-password" placeholder="At least 8 chars, 1 letter + 1 number" required>
-            <button type="button" class="toggle-pw" aria-label="Toggle password visibility"
-                    data-target="r-password">
-              <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
-                <ellipse cx="8" cy="8" rx="5.5" ry="3.5" stroke="currentColor" stroke-width="1.4"/>
-                <circle cx="8" cy="8" r="1.5" fill="currentColor"/>
-              </svg>
+            <input class="form-input" id="r-password" type="password" name="password" autocomplete="new-password" placeholder="Min. 8 chars, 1 letter + 1 number" required>
+            <button type="button" class="toggle-pw" data-target="r-password" aria-label="Toggle">
+              <svg width="15" height="15" viewBox="0 0 16 16" fill="none"><ellipse cx="8" cy="8" rx="5.5" ry="3.5" stroke="currentColor" stroke-width="1.4"/><circle cx="8" cy="8" r="1.5" fill="currentColor"/></svg>
             </button>
           </div>
           <div class="pw-strength" id="pw-strength" aria-live="polite"></div>
@@ -132,46 +111,37 @@
         <div class="form-field">
           <label class="form-label" for="r-confirm-pw">Confirm password <span class="req">*</span></label>
           <div class="input-with-toggle">
-            <input class="form-input" id="r-confirm-pw" type="password" name="confirm_password"
-                   autocomplete="new-password" placeholder="Repeat password" required>
-            <button type="button" class="toggle-pw" aria-label="Toggle password visibility"
-                    data-target="r-confirm-pw">
-              <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
-                <ellipse cx="8" cy="8" rx="5.5" ry="3.5" stroke="currentColor" stroke-width="1.4"/>
-                <circle cx="8" cy="8" r="1.5" fill="currentColor"/>
-              </svg>
+            <input class="form-input" id="r-confirm-pw" type="password" name="confirm_password" autocomplete="new-password" placeholder="Repeat password" required>
+            <button type="button" class="toggle-pw" data-target="r-confirm-pw" aria-label="Toggle">
+              <svg width="15" height="15" viewBox="0 0 16 16" fill="none"><ellipse cx="8" cy="8" rx="5.5" ry="3.5" stroke="currentColor" stroke-width="1.4"/><circle cx="8" cy="8" r="1.5" fill="currentColor"/></svg>
             </button>
           </div>
           <div class="field-error" id="err-confirm-pw"></div>
         </div>
       </div>
 
-      <div class="form-field" style="margin-top:16px">
+      <div class="form-field" style="margin-top:4px">
         <label class="checkbox-label">
           <input type="checkbox" id="r-terms" name="terms_accepted" required>
-          <span>I agree to the <a href="#" class="link">Terms of Service</a> and
-          <a href="#" class="link">Privacy Policy</a></span>
+          <span>I agree to the <a href="#" class="link">Terms of Service</a> and <a href="#" class="link">Privacy Policy</a></span>
         </label>
         <div class="field-error" id="err-terms"></div>
       </div>
 
-      <button type="submit" class="btn btn-primary btn-auth" id="btn-register"
-              style="margin-top:20px">
+      <button type="submit" class="btn btn-primary btn-auth" id="btn-register">
         <span class="btn-label">Create account</span>
         <span class="btn-spinner hidden" aria-hidden="true"></span>
       </button>
     </form>
 
-    <p class="auth-footer-link">
-      Already have an account? <a href="/">Sign in</a>
-    </p>
-
+    <hr class="auth-divider">
+    <p class="auth-footer-link">Already have an account? <a href="/">Sign in</a></p>
   </div>
 </div>
 
 <script src="{{ url_for('static', filename='auth.js') }}"></script>
 <script>
-(function() {
+(function () {
   'use strict';
   const form   = document.getElementById('register-form');
   const banner = document.getElementById('auth-banner');
@@ -179,37 +149,32 @@
   const pwEl   = document.getElementById('r-password');
   const strengthEl = document.getElementById('pw-strength');
 
-  // Live password strength indicator
   pwEl.addEventListener('input', () => {
     const v = pwEl.value;
-    let score = 0;
-    if (v.length >= 8) score++;
-    if (v.length >= 12) score++;
-    if (/[A-Z]/.test(v)) score++;
-    if (/[0-9]/.test(v)) score++;
-    if (/[^A-Za-z0-9]/.test(v)) score++;
-    const labels = ['', 'Weak', 'Fair', 'Good', 'Strong', 'Very strong'];
-    const cls    = ['', 'pw-weak', 'pw-fair', 'pw-good', 'pw-strong', 'pw-vstrong'];
-    strengthEl.textContent = labels[score] || '';
-    strengthEl.className   = 'pw-strength ' + (cls[score] || '');
+    let s = 0;
+    if (v.length >= 8)  s++;
+    if (v.length >= 12) s++;
+    if (/[A-Z]/.test(v)) s++;
+    if (/[0-9]/.test(v)) s++;
+    if (/[^A-Za-z0-9]/.test(v)) s++;
+    const labels = ['','Weak','Fair','Good','Strong','Very strong'];
+    const cls    = ['','pw-weak','pw-fair','pw-good','pw-strong','pw-vstrong'];
+    strengthEl.textContent = labels[s] || '';
+    strengthEl.className   = 'pw-strength ' + (cls[s] || '');
   });
 
   form.addEventListener('submit', async (e) => {
     e.preventDefault();
     clearBanner(banner);
-    // Client-side validation
+    ['err-full-name','err-email','err-business-name','err-password','err-confirm-pw','err-terms']
+      .forEach(id => { const el = document.getElementById(id); if (el) el.textContent = ''; });
+
     const pw  = document.getElementById('r-password').value;
     const cpw = document.getElementById('r-confirm-pw').value;
-    if (pw !== cpw) {
-      document.getElementById('err-confirm-pw').textContent = 'Passwords do not match.';
-      return;
-    }
-    if (!document.getElementById('r-terms').checked) {
-      document.getElementById('err-terms').textContent = 'You must accept the terms.';
-      return;
-    }
-    setLoading(btnEl, true);
+    if (pw !== cpw) { document.getElementById('err-confirm-pw').textContent = 'Passwords do not match.'; return; }
+    if (!document.getElementById('r-terms').checked) { document.getElementById('err-terms').textContent = 'You must accept the terms.'; return; }
 
+    setLoading(btnEl, true);
     const payload = {
       full_name:        document.getElementById('r-full-name').value.trim(),
       email:            document.getElementById('r-email').value.trim(),
@@ -218,28 +183,20 @@
       address_line1:    document.getElementById('r-addr1').value.trim(),
       city:             document.getElementById('r-city').value.trim(),
       state_region:     document.getElementById('r-state').value.trim(),
-      postal_code:      document.getElementById('r-postal').value.trim(),
       business_name:    document.getElementById('r-biz-name').value.trim(),
       business_type:    document.getElementById('r-biz-type').value,
       business_website: document.getElementById('r-website').value.trim(),
-      password:         pw,
-      confirm_password: cpw,
-      terms_accepted:   true,
+      password: pw, confirm_password: cpw, terms_accepted: true,
     };
-
     try {
       const resp = await fetch('/api/auth/register', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
       });
       const body = await resp.json();
       if (resp.status === 201 && body.ok) {
         showBanner(banner, body.message, 'success');
-        // Redirect to email verification
-        setTimeout(() => {
-          window.location.href = '/verify-email?email=' + encodeURIComponent(payload.email);
-        }, 1200);
+        setTimeout(() => { window.location.href = '/verify-email?email=' + encodeURIComponent(payload.email); }, 1000);
       } else {
         showBanner(banner, body.message || 'Registration failed.', 'error');
         setLoading(btnEl, false);

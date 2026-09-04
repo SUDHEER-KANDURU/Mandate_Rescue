@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="utf-8">
@@ -15,12 +15,9 @@
 <div class="auth-wrap">
   <div class="auth-card">
 
-    <!-- Brand -->
     <div class="auth-brand">
       <div class="auth-logo-mark" aria-hidden="true">
-        <svg viewBox="0 0 20 20" xmlns="http://www.w3.org/2000/svg">
-          <path d="M11 2L3 12h7l-1 6 9-10h-7l1-6z"/>
-        </svg>
+        <svg viewBox="0 0 20 20" xmlns="http://www.w3.org/2000/svg"><path d="M11 2L3 12h7l-1 6 9-10h-7l1-6z"/></svg>
       </div>
       <span class="auth-brand-name">Mandate Rescue</span>
     </div>
@@ -28,15 +25,13 @@
     <h1 class="auth-title">Welcome back</h1>
     <p class="auth-subtitle">Sign in to your merchant account</p>
 
-    <!-- Error / success banner -->
     <div id="auth-banner" class="auth-banner hidden" role="alert"></div>
 
     <form id="login-form" novalidate autocomplete="on">
       <div class="form-field">
         <label class="form-label" for="login-email">Email address</label>
-        <input class="form-input" id="login-email" type="email"
-               name="email" autocomplete="email"
-               placeholder="you@company.com" required>
+        <input class="form-input" id="login-email" type="email" name="email"
+               autocomplete="email" placeholder="you@company.com" required>
         <div class="field-error" id="err-email"></div>
       </div>
 
@@ -46,12 +41,10 @@
           <a href="/forgot-password" class="form-label-link">Forgot password?</a>
         </label>
         <div class="input-with-toggle">
-          <input class="form-input" id="login-password" type="password"
-                 name="password" autocomplete="current-password"
-                 placeholder="••••••••" required>
-          <button type="button" class="toggle-pw" aria-label="Toggle password visibility"
-                  data-target="login-password">
-            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+          <input class="form-input" id="login-password" type="password" name="password"
+                 autocomplete="current-password" placeholder="••••••••" required>
+          <button type="button" class="toggle-pw" aria-label="Show/hide password" data-target="login-password">
+            <svg width="15" height="15" viewBox="0 0 16 16" fill="none">
               <ellipse cx="8" cy="8" rx="5.5" ry="3.5" stroke="currentColor" stroke-width="1.4"/>
               <circle cx="8" cy="8" r="1.5" fill="currentColor"/>
             </svg>
@@ -66,35 +59,39 @@
       </button>
     </form>
 
+    <p class="auth-terms-notice">
+      By signing in you agree to our
+      <a href="#">Terms of Service</a> and <a href="#">Privacy Policy</a>.
+    </p>
+
+    <hr class="auth-divider">
+
     <p class="auth-footer-link">
       Don't have an account? <a href="/register">Create account</a>
     </p>
 
-  </div><!-- /.auth-card -->
+  </div>
 </div>
 
 <script src="{{ url_for('static', filename='auth.js') }}"></script>
 <script>
-(function() {
+(function () {
   'use strict';
-  const form    = document.getElementById('login-form');
-  const banner  = document.getElementById('auth-banner');
-  const btnEl   = document.getElementById('btn-login');
+  const form   = document.getElementById('login-form');
+  const banner = document.getElementById('auth-banner');
+  const btnEl  = document.getElementById('btn-login');
 
   form.addEventListener('submit', async (e) => {
     e.preventDefault();
     clearBanner(banner);
     setLoading(btnEl, true);
-
     const email    = document.getElementById('login-email').value.trim();
     const password = document.getElementById('login-password').value;
-
     if (!email || !password) {
       showBanner(banner, 'Email and password are required.', 'error');
       setLoading(btnEl, false);
       return;
     }
-
     try {
       const resp = await fetch('/api/auth/login', {
         method: 'POST',

@@ -154,6 +154,13 @@ def init_db(conn=None):
         _migrate(conn)
         # Auth schema (merchants, sessions, OTP, security events, notifications)
         conn.executescript(AUTH_SCHEMA)
+        # Phase 7: unified recovery OS schema
+        try:
+            from phase7_schema import PHASE7_SCHEMA, _migrate_phase7
+            conn.executescript(PHASE7_SCHEMA)
+            _migrate_phase7(conn)
+        except Exception:
+            pass
         conn.commit()
     finally:
         if own:
@@ -465,6 +472,12 @@ def reset_db(conn=None):
                 conn.execute(f"DELETE FROM {tbl}")
             except Exception:
                 pass
+        # Phase 7: clear Phase 7 tables on reset.
+        try:
+            from phase7_schema import reset_phase7
+            reset_phase7(conn)
+        except Exception:
+            pass
         conn.commit()
     finally:
         if own:

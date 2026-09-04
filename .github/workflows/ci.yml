@@ -8,6 +8,7 @@ jobs:
   test:
     runs-on: ubuntu-latest
     strategy:
+      fail-fast: false   # report both 3.11 and 3.12 independently; don't cancel sibling on first failure
       matrix:
         python-version: ["3.11", "3.12"]
 

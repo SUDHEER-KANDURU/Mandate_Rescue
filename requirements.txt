@@ -7,10 +7,16 @@ gunicorn==22.0.0
 # ML validation/research layer (backend/ml/). This model is ADDITIVE: it produces
 # its own validated recovery-likelihood prediction shown alongside the rule-based
 # score. It does NOT drive any agent/compliance/scoring decision.
-scikit-learn==1.9.0
-joblib==1.6.0
+#
+# Version constraints: must support BOTH Python 3.11 and Python 3.12 on Linux.
+# numpy 2.5.x dropped Python 3.11 (released 2026-06-21) — pin to last supported.
+# scikit-learn 1.5.2 is the last release before narwhals became a required dep
+# (added in 1.9.0, uncontrolled transitive install in older pip lock files).
+# joblib 1.4.2 is the matching stable release for scikit-learn 1.5.2.
+scikit-learn==1.5.2
+joblib==1.4.2
 pandas==2.2.3
-numpy==2.5.2
+numpy==2.2.6
 
 # SHAP explainability for the additive ML layer (backend/ml/explain.py). Provides
 # per-case feature-contribution breakdowns and a global feature-importance summary.
@@ -28,3 +34,7 @@ scipy==1.13.1
 
 # Loads a local .env file into the environment on startup (optional but convenient).
 python-dotenv==1.0.1
+
+# werkzeug is a Flask dependency; pin min version to avoid security regressions.
+# Flask 3.0.3 already pulls werkzeug>=3.0.0.
+werkzeug>=3.0.0

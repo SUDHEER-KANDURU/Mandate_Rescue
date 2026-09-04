@@ -381,22 +381,52 @@
       if (!resp.ok) return;
       const body = await resp.json();
       if (!body.ok || !body.events.length) {
-        container.innerHTML = '<div style="font-size:12px;color:#475569">No events yet.</div>';
+        container.innerHTML = '<div style="font-size:11px;color:#475569;padding:6px 0">No recent activity.</div>';
         return;
       }
-      container.innerHTML = body.events.slice(0, 10).map(ev => `
+      container.innerHTML = body.events.slice(0, 8).map(ev => `
         <div class="security-event-row">
-          <div class="security-event-type">${_fmtEventType(ev.event_type)}</div>
-          <div class="security-event-time">${ev.created_at ? ev.created_at.slice(0, 16).replace('T', ' ') + ' UTC' : ''}</div>
+          <div class="security-event-dot"></div>
+          <div>
+            <div class="security-event-type">${_fmtEventType(ev.event_type)}</div>
+            <div class="security-event-time">${_fmtTime(ev.created_at)}</div>
+          </div>
         </div>
       `).join('');
     } catch (e) {
-      container.innerHTML = '<div style="font-size:12px;color:#475569">Could not load events.</div>';
+      container.innerHTML = '<div style="font-size:11px;color:#475569;padding:6px 0">Could not load activity.</div>';
     }
   }
 
   function _fmtEventType(t) {
-    return (t || '').replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+    const map = {
+      'registered':         'Account created',
+      'email_verified':     'Email verified',
+      'login_success':      'Signed in',
+      'login_failed':       'Sign-in failed',
+      'logout':             'Signed out',
+      'password_reset':     'Password reset',
+      'password_changed':   'Password changed',
+      'email_changed':      'Email address changed',
+      'profile_updated':    'Profile updated',
+      'notification_pref_changed': 'Notification preferences changed',
+      'session_invalidated':'Session invalidated',
+    };
+    return map[t] || (t || '').replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+  }
+
+  function _fmtTime(iso) {
+    if (!iso) return '';
+    try {
+      const d = new Date(iso);
+      return d.toLocaleString('en-IN', {
+        day: '2-digit', month: 'short', year: 'numeric',
+        hour: '2-digit', minute: '2-digit', hour12: true,
+        timeZone: 'Asia/Kolkata'
+      }) + ' IST';
+    } catch (e) {
+      return iso.slice(0, 16).replace('T', ' ') + ' UTC';
+    }
   }
 
   // ---------------------------------------------------------------------------

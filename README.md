@@ -469,12 +469,48 @@ Mandate_Rescue/
 
 ---
 
-## Roadmap (Phase 7 and beyond)
+## Phase 7 — Revenue Recovery OS (COMPLETE)
+
+Phase 7 transforms Mandate Rescue into a full **AI-Powered Revenue Recovery OS**.
+
+### New in Phase 7
+
+| Capability | Status |
+|---|---|
+| Unified Recovery Case model (7 scenario types) | COMPLETE |
+| Recovery Orchestrator: DETECT→PREDICT→DECIDE→ACT→OBSERVE→MEASURE→LEARN | COMPLETE |
+| Checkout Abandonment Recovery | COMPLETE |
+| B2B Receivables Chaser + Invoice Aging | COMPLETE |
+| Promise-to-Pay Tracker | COMPLETE |
+| Intelligent Mandate Retry Sequencer (adaptive timing) | COMPLETE |
+| Payment Degradation Investigator + Root Cause | COMPLETE |
+| Hinglish + Multilingual Recovery Messaging | COMPLETE |
+| Multichannel Decisioning (Email, SMS, WhatsApp-ready, In-app) | COMPLETE |
+| Voice-Ready Script Generation | COMPLETE |
+| Merchant Command Center (KPIs + Priority Queue) | COMPLETE |
+| Revenue Journey Visualization | COMPLETE |
+| Unified Case View (timeline, actions, outcome) | COMPLETE |
+| Merchant Copilot AI Assistant | COMPLETE |
+| Policy Center (per-merchant configurable) | COMPLETE |
+| Human-in-the-Loop Approval Flow | COMPLETE |
+| Recovery Analytics (funnel, aging, promise conversion) | COMPLETE |
+| Demo Mode (deterministic, isolated from real data) | COMPLETE |
+| Adaptive Learning (strategy performance feed-back) | COMPLETE |
+| Merchant Data Isolation (merchant_id scoping on all tables) | COMPLETE |
+
+### Test results (Phase 7)
+
+`
+714 passed  2 skipped  0 failures  0 warnings
+Previous baseline: 655  (+59 new passing tests)
+`
+
+---
+
+## Roadmap (post-Phase 7)
 
 - Replace SQLite with PostgreSQL for multi-worker production deployment
 - Real UPI debit trigger when Razorpay exposes a suitable Test Mode API
-- SMS/WhatsApp delivery via Razorpay Messages integration
-- Per-merchant policy scoping (currently global namespace)
+- SMS/WhatsApp delivery via Razorpay Messages or Exotel integration
 - Real ML training data from anonymised historical outcomes
-- Time-series forecasting (forward-looking, not just historical)
 - OpenTelemetry distributed tracing

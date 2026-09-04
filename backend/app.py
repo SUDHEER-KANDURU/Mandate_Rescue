@@ -3130,6 +3130,15 @@ def api_learning_dashboard():
     return jsonify(summary)
 
 
+# --- Phase 7 Routes Registration ---
+try:
+    from p7_routes import register_p7_routes
+    register_p7_routes(app, db, _require_auth, jsonify, request)
+    app.logger.info("Phase 7 routes registered successfully.")
+except Exception as _p7_err:
+    app.logger.warning("Phase 7 routes not loaded: %s", _p7_err)
+
+
 if __name__ == "__main__":
     db.init_db()
     # Phase 4: reset any stale claimed jobs before serving (handles process restart).
