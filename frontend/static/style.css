@@ -113,6 +113,24 @@
   /* Fonts */
   --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
   --font-mono: 'JetBrains Mono', 'SF Mono', 'Fira Code', monospace;
+
+  /* Legacy aliases — Phase 7 / Learning components use these shorthand names */
+  --surface:   var(--bg-surface);
+  --surface-1: var(--bg-surface);
+  --surface-2: var(--gray-50);
+  --bg:        var(--bg-app);
+  --border:    var(--border-default);
+  --border-subtle: var(--border-default);
+  --text:      var(--text-primary);
+  --text-1:    var(--text-primary);
+  --text-2:    var(--text-secondary);
+  --text-muted: var(--text-tertiary);
+  --muted:     var(--text-tertiary);
+  --accent:    var(--blue-500);
+  --accent-ok: var(--status-success-text);
+  --accent-warn: var(--amber-500);
+  --status-error: var(--red-500);
+  --radius:    var(--radius-lg);
 }
 
 /* Dark theme */
@@ -177,6 +195,24 @@
   --shadow-xl: 0 20px 48px rgba(0,0,0,0.5), 0 8px 16px rgba(0,0,0,0.35);
 
   --bg-overlay: rgba(0,0,0,0.65);
+
+  /* Legacy aliases — dark theme overrides */
+  --surface:   var(--bg-surface);
+  --surface-1: var(--bg-surface);
+  --surface-2: var(--gray-50);
+  --bg:        var(--bg-app);
+  --border:    var(--border-default);
+  --border-subtle: var(--border-default);
+  --text:      var(--text-primary);
+  --text-1:    var(--text-primary);
+  --text-2:    var(--text-secondary);
+  --text-muted: var(--text-tertiary);
+  --muted:     var(--text-tertiary);
+  --accent:    var(--blue-500);
+  --accent-ok: var(--status-success-text);
+  --accent-warn: var(--amber-500);
+  --status-error: var(--red-500);
+  --radius:    var(--radius-lg);
 }
 
 
@@ -3101,6 +3137,7 @@ body { font-size: 13px; line-height: 1.6; }
   display: flex;
   flex-direction: column;
   gap: 0.25rem;
+  box-shadow: var(--shadow-xs);
 }
 .kpi-card.critical { border-left: 3px solid #ef4444; }
 .kpi-card.warning  { border-left: 3px solid #f59e0b; }
@@ -3143,6 +3180,7 @@ body { font-size: 13px; line-height: 1.6; }
   border-radius: 10px;
   padding: 1.25rem;
   margin-bottom: 1.25rem;
+  box-shadow: var(--shadow-xs);
 }
 .section-card-head {
   display: flex; align-items: center; gap: .75rem; margin-bottom: 1rem; flex-wrap: wrap;
