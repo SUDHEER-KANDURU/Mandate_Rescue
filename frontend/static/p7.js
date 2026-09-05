@@ -23,6 +23,19 @@ window.P7 = (() => {
     return `<span class="queue-badge ${p}">${p}</span>`;
   }
 
+  /* ---- view title map (mirrors app.js VIEW_TITLES for Recovery OS views) ---- */
+  const VIEW_TITLES = {
+    'command-center':   'Command Center',
+    'revenue-journey':  'Revenue Journey',
+    'recovery-cases':   'Recovery Cases',
+    'checkout-recovery':'Checkout Recovery',
+    'b2b-receivables':  'B2B Receivables',
+    'promises':         'Promises',
+    'recovery-policy':  'Policy Center',
+    'copilot':          'Copilot',
+    'p7-demo':          'Demo Flow',
+  };
+
   /* ---- view activation ---- */
   function activateView(name) {
     document.querySelectorAll('.view-content').forEach(s => s.classList.add('hidden'));
@@ -32,7 +45,22 @@ window.P7 = (() => {
     if (v) v.classList.remove('hidden');
     document.querySelectorAll('.nav-item[data-view]').forEach(b => {
       b.classList.toggle('active', b.dataset.view === name);
+      b.setAttribute('aria-current', b.dataset.view === name ? 'page' : 'false');
     });
+
+    // Sync topbar breadcrumb
+    const headerTitle = document.getElementById('header-page-title');
+    if (headerTitle) headerTitle.textContent = VIEW_TITLES[name] || name;
+
+    // Sync page <title>
+    const label = VIEW_TITLES[name] || name;
+    document.title = (label ? label + ' — ' : '') + 'Mandate Rescue';
+
+    // Sync URL hash for deep-linking / refresh
+    if (('#' + name) !== window.location.hash) {
+      history.replaceState(null, '', '#' + name);
+    }
+
     const loaders = {
       'command-center':   loadCommandCenter,
       'revenue-journey':  loadRevenueJourney,

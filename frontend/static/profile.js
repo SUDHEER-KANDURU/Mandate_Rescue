@@ -104,7 +104,8 @@
       verEl.className   = 'profile-row-value ' + (m.email_verified ? 'badge-verified' : 'badge-unverified');
     }
     setText('p-phone', m.phone || '—');
-    setText('p-created-at', m.created_at ? m.created_at.slice(0, 10) : '—');
+    setText('p-created-at', m.created_at ? _fmtDate(m.created_at) : '—');
+    setText('p-last-login', m.last_login_at ? _fmtTime(m.last_login_at) : 'Never');
     setText('p-biz-name', m.business_name || '—');
     setText('p-biz-type', m.business_type || '—');
     setText('p-website', m.business_website || '—');
@@ -418,7 +419,12 @@
   function _fmtTime(iso) {
     if (!iso) return '';
     try {
-      const d = new Date(iso);
+      // SQLite stores UTC without a trailing 'Z'; append it so the browser
+      // doesn't treat the string as local time.
+      const normalized = iso.endsWith('Z') || /[+-]\d{2}:\d{2}$/.test(iso)
+        ? iso : iso.replace(' ', 'T') + 'Z';
+      const d = new Date(normalized);
+      if (isNaN(d.getTime())) return iso.slice(0, 16).replace('T', ' ') + ' UTC';
       return d.toLocaleString('en-IN', {
         day: '2-digit', month: 'short', year: 'numeric',
         hour: '2-digit', minute: '2-digit', hour12: true,
@@ -426,6 +432,22 @@
       }) + ' IST';
     } catch (e) {
       return iso.slice(0, 16).replace('T', ' ') + ' UTC';
+    }
+  }
+
+  function _fmtDate(iso) {
+    if (!iso) return '';
+    try {
+      const normalized = iso.endsWith('Z') || /[+-]\d{2}:\d{2}$/.test(iso)
+        ? iso : iso.replace(' ', 'T') + 'Z';
+      const d = new Date(normalized);
+      if (isNaN(d.getTime())) return iso.slice(0, 10);
+      return d.toLocaleDateString('en-IN', {
+        day: '2-digit', month: 'short', year: 'numeric',
+        timeZone: 'Asia/Kolkata'
+      });
+    } catch (e) {
+      return iso.slice(0, 10);
     }
   }
 
@@ -437,16 +459,32 @@
     const btn    = $('btn-test-email');
     const result = $('test-email-result');
     btn.disabled = true;
-    if (result) result.textContent = 'Sending…';
+    if (result) { result.textContent = 'Sending…'; result.style.color = ''; }
+
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 15000);
+
     try {
-      const resp = await fetch('/api/profile/send-test-email', { method: 'POST' });
+      const resp = await fetch('/api/profile/send-test-email', {
+        method: 'POST',
+        signal: controller.signal,
+      });
+      clearTimeout(timer);
       const body = await resp.json();
       if (result) {
-        result.textContent = body.message || 'Done.';
-        result.style.color = body.status === 'SENT' ? '#4ade80' : '#94a3b8';
+        result.textContent = body.message || (body.ok ? 'Test email sent.' : 'Send failed.');
+        result.style.color = body.status === 'SENT' ? 'var(--status-success-text)'
+                           : body.status === 'SIMULATED' ? 'var(--text-secondary)'
+                           : 'var(--status-error-text)';
       }
     } catch (err) {
-      if (result) result.textContent = 'Network error.';
+      clearTimeout(timer);
+      if (result) {
+        result.textContent = err.name === 'AbortError'
+          ? 'Timed out — check your SMTP settings.'
+          : 'Network error — could not reach the server.';
+        result.style.color = 'var(--status-error-text)';
+      }
     }
     btn.disabled = false;
   });
