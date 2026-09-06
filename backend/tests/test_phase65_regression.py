@@ -257,12 +257,57 @@ def test_llm_globals_thread_safety():
 # 7. SSE token endpoint authentication
 # ---------------------------------------------------------------------------
 
+class _NoCloseConn:
+    """Proxy that delegates to an in-memory connection but ignores close().
+
+    The Flask app calls conn.close() after every request; we must prevent that
+    from killing the shared in-memory DB that the test is inspecting.
+    """
+    def __init__(self, conn):
+        object.__setattr__(self, "_conn", conn)
+
+    def close(self):
+        pass  # keep the shared connection alive
+
+    def __getattr__(self, name):
+        return getattr(object.__getattribute__(self, "_conn"), name)
+
+
 @pytest.fixture
 def client():
+    """Flask test client backed by an isolated, schema-initialized in-memory DB.
+
+    Patches db.get_connection so every route handler that opens a connection
+    gets the same in-memory DB instead of the on-disk mandate_rescue.db.
+    This makes the fixture independent of:
+      - whether mandate_rescue.db exists on disk (critical for CI)
+      - the value of app._db_initialized left behind by earlier test files
+        that call importlib.reload(app_module)
+    """
     import app as app_module
+    import db as db_module
+
+    # Build a fresh in-memory DB with the full schema.
+    mem_conn = db_module.get_memory_connection()
+    db_module.init_db(mem_conn)
+    mem_conn.commit()
+
+    proxy = _NoCloseConn(mem_conn)
+
+    original_get_connection = db_module.get_connection
+    db_module.get_connection = lambda: proxy
+
+    # Reset the one-shot guards so before_request hooks run cleanly against
+    # the in-memory DB instead of being skipped due to state from prior tests.
+    app_module._db_initialized = False
+    app_module._stale_jobs_reset = False
     app_module.app.config["TESTING"] = True
+
     with app_module.app.test_client() as c:
         yield c
+
+    db_module.get_connection = original_get_connection
+    mem_conn.close()
 
 
 def _api_key(client):

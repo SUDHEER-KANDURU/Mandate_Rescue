@@ -352,3 +352,190 @@
   background: #6366f1; border-color: #6366f1; color: #fff;
 }
 .panel-btn-primary:hover { background: #4f46e5; border-color: #4f46e5; }
+
+
+/* ============================================================
+   AUTH POLISH PASS — Final demo readiness
+   ============================================================ */
+
+/* ── Optional label ─────────────────────────────────────────── */
+.auth-optional {
+  font-size: 11px;
+  font-weight: 400;
+  color: #64748b;
+  margin-left: 4px;
+}
+
+/* ── Step indicator (forgot password) ──────────────────────── */
+.auth-steps {
+  display: flex;
+  align-items: center;
+  gap: 0;
+  margin-bottom: 20px;
+}
+
+.auth-step {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  opacity: 0.4;
+  transition: opacity 0.2s;
+}
+.auth-step.active { opacity: 1; }
+.auth-step.done   { opacity: 0.7; }
+
+.auth-step-num {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: #2d3148;
+  border: 1.5px solid #3d4268;
+  color: #94a3b8;
+  font-size: 11px;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  transition: background 0.2s, color 0.2s, border-color 0.2s;
+}
+.auth-step.active .auth-step-num {
+  background: #6366f1;
+  color: #fff;
+  border-color: #6366f1;
+}
+.auth-step.done .auth-step-num {
+  background: #22c55e;
+  color: #fff;
+  border-color: #22c55e;
+}
+
+.auth-step-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: #94a3b8;
+  white-space: nowrap;
+}
+.auth-step.active .auth-step-label { color: #e2e8f0; }
+.auth-step.done .auth-step-label   { color: #22c55e; }
+
+.auth-step-connector {
+  flex: 1;
+  height: 1px;
+  background: #2d3148;
+  margin: 0 10px;
+  min-width: 20px;
+}
+
+/* ── OTP input: bigger, mono, centred ───────────────────────── */
+.otp-input {
+  font-family: 'JetBrains Mono', 'SF Mono', monospace !important;
+  font-size: 24px !important;
+  letter-spacing: 10px !important;
+  text-align: center !important;
+  padding: 10px 14px !important;
+  height: auto !important;
+}
+
+/* ── Verify icon container ──────────────────────────────────── */
+.verify-icon {
+  display: flex;
+  justify-content: center;
+  margin-bottom: 16px;
+  animation: verifyIconIn 0.4s ease;
+}
+@keyframes verifyIconIn {
+  from { opacity: 0; transform: scale(0.8); }
+  to   { opacity: 1; transform: scale(1); }
+}
+
+/* ── Auth card: slightly more breathing room ────────────────── */
+.auth-card {
+  padding: 30px 28px 26px;
+}
+.auth-card-wide {
+  padding: 28px 34px 24px;
+}
+
+/* ── Auth title: tighter ────────────────────────────────────── */
+.auth-title {
+  font-size: 22px;
+  letter-spacing: -0.02em;
+}
+
+/* ── Auth subtitle: slightly looser ────────────────────────── */
+.auth-subtitle {
+  line-height: 1.55;
+  margin-bottom: 18px;
+}
+
+/* ── Form field: a touch more gap ───────────────────────────── */
+.form-field {
+  margin-bottom: 14px;
+}
+
+/* ── Auth button: full height ───────────────────────────────── */
+.btn-auth {
+  height: 42px !important;
+  font-size: 14px !important;
+  font-weight: 700 !important;
+  margin-top: 6px;
+  letter-spacing: 0.01em;
+}
+
+/* ── Auth section label: uppercase with better spacing ──────── */
+.auth-section-label {
+  margin-top: 18px;
+  margin-bottom: 10px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid #2d3148;
+}
+
+/* ── Field hint: softer ─────────────────────────────────────── */
+.field-hint {
+  font-size: 11px;
+  color: #475569;
+  margin-top: 4px;
+  line-height: 1.4;
+}
+
+/* ── Resend row: better spacing ─────────────────────────────── */
+.resend-row {
+  margin-top: 16px;
+  text-align: center;
+  font-size: 12px;
+  color: #64748b;
+}
+
+/* ── Auth footer link: more breathing room ──────────────────── */
+.auth-footer-link {
+  margin-top: 16px;
+}
+
+/* ── Smooth card entrance ───────────────────────────────────── */
+.auth-card {
+  animation: cardIn 0.2s ease;
+}
+@keyframes cardIn {
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: none; }
+}
+
+/* ── Focus ring: matches design system ─────────────────────── */
+.form-input:focus,
+.form-select:focus {
+  border-color: #6366f1;
+  box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.18);
+}
+
+/* ── Strength bar pulse on change ───────────────────────────── */
+.pw-strength {
+  transition: color 0.15s;
+}
+
+/* ── Responsive: single column on narrow phones ─────────────── */
+@media (max-width: 420px) {
+  .auth-card, .auth-card-wide { padding: 22px 16px 18px; }
+  .auth-title { font-size: 19px; }
+  .otp-input  { letter-spacing: 8px !important; font-size: 22px !important; }
+}

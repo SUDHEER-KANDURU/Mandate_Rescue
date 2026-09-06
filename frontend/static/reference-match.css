@@ -1,0 +1,2054 @@
+/*
+ * reference-match.css
+ * =====================================================================
+ * PURPOSE: Make Mandate Rescue visually match the provided reference
+ *          dashboard screenshots (light + dark).
+ *
+ * STRATEGY: This file overrides specific rules that diverge from the
+ * reference. It is loaded AFTER style.css so every rule here wins.
+ * No existing functionality is changed — only visual presentation.
+ *
+ * REFERENCE OBSERVATIONS:
+ *  - Sidebar  ~160 px wide, compact [icon + label], left-border active state
+ *  - Topbar   solid dark/charcoal bar in BOTH modes, amber "Simulated" badge
+ *  - Cards    small radius (6 px), 1 px border, shadow-xs only
+ *  - KPI row  horizontal icon-left layout, large mono value, small trend
+ *  - Tables   compact rows (9/10 px cell padding), round avatar initials
+ *  - Badges   small pills, semantic only — no random colour
+ *  - Charts   restrained palette, thin grid lines
+ *  - No gradients on content cards, no glassmorphism, no neon
+ * =====================================================================
+ */
+
+
+/* ===================================================================
+   DESIGN TOKEN OVERRIDES
+   =================================================================== */
+:root {
+  /* Tighter layout — overridden by dashboard.css to 196px */
+  --sidebar-width:  196px;
+  --header-height:  52px;
+
+  /* Restrained card radius — reference uses 6-8 px, not 12 */
+  --radius-card:   6px;
+  --radius-xl:     8px;   /* was 12px — too round */
+  --radius-lg:     6px;   /* was 8px */
+  --radius-md:     4px;   /* was 6px */
+  --radius-sm:     3px;   /* was 4px */
+  --radius:        6px;
+
+  /* Exact light-mode background from reference */
+  --bg-app:     #F1F3F5;   /* very light neutral, not pure white */
+  --bg-surface: #FFFFFF;
+  --bg-subtle:  #F8F9FA;
+
+  /* Borders: slightly more visible for separation */
+  --border-default: #E3E6EA;
+  --border-strong:  #CDD2DA;
+
+  /* Text: slightly warmer charcoal to match reference */
+  --text-primary:   #111827;
+  --text-secondary: #374151;
+  --text-tertiary:  #6B7280;
+
+  /* Topbar tokens — reference uses a dark bar */
+  --topbar-bg:        #1C1F26;
+  --topbar-border:    #2D3139;
+  --topbar-text:      #F1F3F5;
+  --topbar-muted:     #9CA3AF;
+  --topbar-btn-bg:    #2D3139;
+  --topbar-btn-hover: #3A3F4A;
+
+  /* Sidebar tokens — reference: white/light with subtle active */
+  --sidebar-bg:          #FFFFFF;
+  --sidebar-border:      #E3E6EA;
+  --sidebar-item-active-bg:   #EEF2FF;
+  --sidebar-item-active-text: #2563EB;
+  --sidebar-item-active-border: #2563EB;
+
+  /* Accent blue — slightly more saturated to match reference */
+  --blue-500: #2563EB;
+  --blue-600: #1D4ED8;
+  --blue-50:  #EEF2FF;
+  --blue-100: #DBEAFE;
+
+  /* Simulated/test indicator: amber, not green */
+  --sim-badge-bg:     #FEF3C7;
+  --sim-badge-text:   #92400E;
+  --sim-badge-border: #FCD34D;
+
+  /* Shadow: even lighter than current */
+  --shadow-xs: 0 1px 2px rgba(0,0,0,0.05);
+  --shadow-sm: 0 1px 3px rgba(0,0,0,0.07), 0 1px 2px rgba(0,0,0,0.04);
+  --shadow-md: 0 2px 6px rgba(0,0,0,0.06), 0 1px 3px rgba(0,0,0,0.04);
+}
+
+/* Dark mode tokens — reference: #0F1117 bg, #1A1D24 cards */
+:root[data-theme="dark"] {
+  --bg-app:     #0F1117;
+  --bg-surface: #1A1D24;
+  --bg-subtle:  #1F2330;
+
+  --border-default: #2C3040;
+  --border-strong:  #3A4050;
+
+  --text-primary:   #F1F3F5;
+  --text-secondary: #9CA3AF;
+  --text-tertiary:  #6B7280;
+
+  /* Topbar stays dark — same in both modes */
+  --topbar-bg:        #13161E;
+  --topbar-border:    #1F2330;
+  --topbar-text:      #F1F3F5;
+  --topbar-muted:     #6B7280;
+  --topbar-btn-bg:    #1F2330;
+  --topbar-btn-hover: #2A2F3C;
+
+  /* Sidebar stays slightly differentiated from content */
+  --sidebar-bg:               #13161E;
+  --sidebar-border:           #1F2330;
+  --sidebar-item-active-bg:   rgba(37,99,235,0.15);
+  --sidebar-item-active-text: #60A5FA;
+  --sidebar-item-active-border: #2563EB;
+
+  --blue-500: #3B82F6;
+  --blue-50:  rgba(59,130,246,0.12);
+  --blue-100: rgba(59,130,246,0.18);
+
+  /* Status colours — desaturated for dark */
+  --status-success-bg:     #052E16;
+  --status-success-text:   #34D399;
+  --status-success-border: #064E3B;
+  --status-error-bg:       #2D0B0B;
+  --status-error-text:     #F87171;
+  --status-error-border:   #4C1414;
+  --status-warning-bg:     #2D1B00;
+  --status-warning-text:   #FBBF24;
+  --status-warning-border: #4C2E00;
+  --status-info-bg:        rgba(37,99,235,0.12);
+  --status-info-text:      #60A5FA;
+  --status-info-border:    rgba(37,99,235,0.25);
+
+  --shadow-xs: 0 1px 2px rgba(0,0,0,0.3);
+  --shadow-sm: 0 1px 3px rgba(0,0,0,0.35), 0 1px 2px rgba(0,0,0,0.25);
+}
+
+
+/* ===================================================================
+   GLOBAL BASE
+   =================================================================== */
+html { font-size: 13px; }
+
+body {
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  font-size: 13px;
+  line-height: 1.5;
+  background: var(--bg-app);
+  color: var(--text-primary);
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Remove any stray gradients */
+.sandbox-panel        { background: var(--bg-surface) !important; }
+.razorpay-live-card   { background: var(--bg-surface) !important; border-color: var(--border-default) !important; }
+
+
+/* ===================================================================
+   LAYOUT
+   =================================================================== */
+.content {
+  margin-left: var(--sidebar-width);
+  margin-top:  var(--header-height);
+  padding: 20px 24px;
+}
+
+/* ===================================================================
+   SIDEBAR
+   =================================================================== */
+.sidebar {
+  width: var(--sidebar-width);
+  background: var(--sidebar-bg);
+  border-right: 1px solid var(--sidebar-border);
+  /* Remove the scrollbar gap */
+  overflow: hidden;
+}
+
+/* Logo block — tighter */
+.sidebar-logo {
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--sidebar-border);
+  gap: 10px;
+}
+
+.sidebar-logo-mark {
+  width: 28px;
+  height: 28px;
+  border-radius: 6px;
+  background: var(--blue-500);
+  flex-shrink: 0;
+}
+
+.sidebar-logo-mark svg {
+  width: 15px;
+  height: 15px;
+}
+
+.sidebar-logo-name {
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+
+.sidebar-logo-tagline {
+  font-size: 10px;
+  color: var(--text-tertiary);
+  margin-top: 0;
+}
+
+/* Nav padding */
+.sidebar-nav {
+  padding: 8px 6px;
+}
+
+/* Section label — very small, muted */
+.nav-section {
+  margin-bottom: 10px;
+}
+
+.nav-section-label {
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--text-tertiary);
+  padding: 0 8px 4px;
+  opacity: 0.7;
+}
+
+.nav-list {
+  gap: 1px;
+}
+
+/* Nav item — compact, left-border active */
+.nav-item {
+  padding: 7px 10px;
+  border-radius: 5px;
+  border: none;          /* no border by default */
+  border-left: 2px solid transparent;
+  font-size: 12.5px;
+  font-weight: 500;
+  color: var(--text-secondary);
+  gap: 9px;
+  line-height: 1.4;
+  transition: background 0.1s, color 0.1s, border-color 0.1s;
+}
+
+.nav-item:hover {
+  background: var(--bg-subtle);
+  color: var(--text-primary);
+}
+
+.nav-item.active {
+  background: var(--sidebar-item-active-bg);
+  color: var(--sidebar-item-active-text);
+  border-left-color: var(--sidebar-item-active-border);
+  font-weight: 600;
+  border-radius: 0 5px 5px 0;
+}
+
+/* Icons — same 16px but opacity normalised */
+.nav-ico {
+  width: 15px;
+  height: 15px;
+  opacity: 0.6;
+  flex-shrink: 0;
+}
+
+.nav-item.active .nav-ico,
+.nav-item:hover .nav-ico {
+  opacity: 1;
+}
+
+/* Phase 7 section accent */
+.p7-nav-section .nav-section-label {
+  color: var(--blue-500);
+  opacity: 0.8;
+}
+
+/* Sidebar bottom */
+.sidebar-bottom {
+  border-top: 1px solid var(--sidebar-border);
+  padding: 6px;
+}
+
+/* System status row at very bottom (add via HTML edit) */
+.sidebar-status {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 8px 10px 10px;
+  font-size: 11px;
+  color: var(--status-success-text);
+}
+
+.sidebar-status-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--status-success-text);
+  flex-shrink: 0;
+  box-shadow: 0 0 4px var(--status-success-text);
+}
+
+.sidebar-status-text {
+  font-weight: 600;
+  color: var(--status-success-text);
+}
+
+.sidebar-status-sub {
+  font-size: 10px;
+  color: var(--text-tertiary);
+  display: block;
+}
+
+/* Dark mode sidebar */
+:root[data-theme="dark"] .sidebar {
+  background: var(--sidebar-bg);
+  border-right-color: var(--sidebar-border);
+}
+
+:root[data-theme="dark"] .sidebar-logo {
+  border-bottom-color: var(--sidebar-border);
+}
+
+
+/* ===================================================================
+   TOPBAR — Dark charcoal in both light and dark modes
+   =================================================================== */
+.topbar {
+  background: var(--topbar-bg) !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+  border-bottom: 1px solid var(--topbar-border) !important;
+  height: var(--header-height);
+  padding: 0 20px;
+  gap: 12px;
+}
+
+.page-breadcrumb {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--topbar-text);
+}
+
+/* Search in topbar */
+.header-search-input {
+  background: var(--topbar-btn-bg);
+  border-color: var(--topbar-border);
+  color: var(--topbar-text);
+  font-size: 12px;
+  height: 30px;
+}
+
+.header-search-input::placeholder {
+  color: var(--topbar-muted);
+}
+
+.header-search-wrap .search-icon {
+  color: var(--topbar-muted);
+}
+
+.header-search-input:focus {
+  background: var(--topbar-btn-bg);
+  border-color: var(--blue-500);
+  box-shadow: 0 0 0 2px rgba(37,99,235,0.25);
+}
+
+/* Env badge — amber "Simulated Data" matching reference */
+.env-badge {
+  background: var(--sim-badge-bg) !important;
+  color: var(--sim-badge-text) !important;
+  border-color: var(--sim-badge-border) !important;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 3px 9px;
+  gap: 5px;
+}
+
+:root[data-theme="dark"] .env-badge {
+  background: rgba(251,191,36,0.12) !important;
+  color: #FBBF24 !important;
+  border-color: rgba(251,191,36,0.25) !important;
+}
+
+/* All buttons in topbar */
+.topbar .btn {
+  height: 28px;
+  font-size: 12px;
+  padding: 0 11px;
+  border-radius: 5px;
+}
+
+.topbar .btn-primary {
+  height: 30px;
+  background: var(--blue-500);
+  border-color: var(--blue-500);
+}
+
+.topbar .btn-ghost {
+  background: var(--topbar-btn-bg);
+  color: var(--topbar-text);
+  border-color: var(--topbar-border);
+}
+
+.topbar .btn-ghost:hover {
+  background: var(--topbar-btn-hover);
+  border-color: var(--topbar-border);
+}
+
+/* Profile avatar in topbar */
+.profile-avatar-btn {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: #4F46E5;  /* reference shows indigo/purple avatar */
+  color: #fff;
+  font-size: 11px;
+  font-weight: 700;
+  border: none;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  transition: opacity 0.12s;
+}
+
+.profile-avatar-btn:hover { opacity: 0.85; }
+
+
+/* ===================================================================
+   CARDS — Smaller radius, no heavy shadow
+   =================================================================== */
+.card,
+.section-card,
+.panel {
+  border-radius: var(--radius-card) !important;
+  border: 1px solid var(--border-default);
+  box-shadow: var(--shadow-xs);
+  background: var(--bg-surface);
+}
+
+/* Tighter card padding */
+.card {
+  padding: 16px 18px;
+  margin-bottom: 16px;
+}
+
+.card.kpi {
+  padding: 14px 16px;
+  margin: 0;
+}
+
+.card-flush {
+  padding: 0 !important;
+  margin-bottom: 16px;
+}
+
+.section-card {
+  padding: 16px 18px;
+  margin-bottom: 16px;
+}
+
+/* Card header */
+.card-head,
+.card-header {
+  margin-bottom: 12px;
+}
+
+.card-title,
+.card-head h2,
+.section-card-head h2 {
+  font-size: 13px !important;
+  font-weight: 600 !important;
+  letter-spacing: -0.01em;
+}
+
+.card-sub {
+  font-size: 11px;
+  color: var(--text-tertiary);
+  margin: 2px 0 10px;
+}
+
+/* Section card head separator */
+.section-card-head {
+  padding-bottom: 10px;
+  margin-bottom: 12px;
+  border-bottom: 1px solid var(--border-default);
+}
+
+/* Remove sandbox gradient */
+.sandbox-panel {
+  border: 1px solid var(--border-default) !important;
+  background: var(--bg-surface) !important;
+}
+
+
+/* ===================================================================
+   KPI ROW (Overview) — horizontal icon-left layout
+   =================================================================== */
+.kpi-row {
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.kpi {
+  padding: 14px 16px !important;
+  border-radius: var(--radius-card) !important;
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  position: relative;
+  overflow: hidden;
+}
+
+/* Large mono number */
+.kpi-value {
+  font-family: var(--font-mono);
+  font-size: 22px !important;
+  font-weight: 700;
+  letter-spacing: -0.03em;
+  line-height: 1.1;
+  margin: 2px 0 0;
+}
+
+.kpi-label {
+  font-size: 11px;
+  font-weight: 500;
+  text-transform: none;
+  letter-spacing: 0;
+  color: var(--text-tertiary);
+  margin-bottom: 0;
+}
+
+.kpi-trend {
+  font-size: 11px;
+  margin-top: 4px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+
+/* ===================================================================
+   KPI GRID (Phase 7 Command Center) — matches reference 4-card layout
+   =================================================================== */
+.kpi-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+@media (max-width: 1200px) { .kpi-grid { grid-template-columns: repeat(4, 1fr); } }
+@media (max-width: 900px)  { .kpi-grid { grid-template-columns: repeat(2, 1fr); } }
+
+.kpi-card {
+  background: var(--bg-surface);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-card) !important;
+  padding: 14px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  box-shadow: var(--shadow-xs);
+  position: relative;
+  overflow: hidden;
+}
+
+/* Accent left strip — reference uses a thin left accent */
+.kpi-card.critical { border-left: 3px solid var(--status-error-text); }
+.kpi-card.warning  { border-left: 3px solid var(--status-warning-text); }
+.kpi-card.success  { border-left: 3px solid var(--status-success-text); }
+
+.kpi-card .kpi-label {
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--text-tertiary);
+  text-transform: none;
+  letter-spacing: 0;
+}
+
+.kpi-card .kpi-value {
+  font-family: var(--font-mono);
+  font-size: 20px !important;
+  font-weight: 700;
+  color: var(--text-primary);
+  letter-spacing: -0.03em;
+  line-height: 1.15;
+}
+
+.kpi-card .kpi-sub {
+  font-size: 10px;
+  font-weight: 500;
+  color: var(--text-tertiary);
+  text-transform: none;
+  letter-spacing: 0;
+}
+
+/* Dark mode card */
+:root[data-theme="dark"] .kpi-card,
+:root[data-theme="dark"] .card,
+:root[data-theme="dark"] .section-card {
+  background: var(--bg-surface);
+  border-color: var(--border-default);
+}
+
+
+/* ===================================================================
+   BUTTONS — tighter, reference sizing
+   =================================================================== */
+.btn {
+  height: 32px;
+  padding: 0 13px;
+  font-size: 12.5px;
+  font-weight: 500;
+  border-radius: 5px;
+  gap: 5px;
+}
+
+.btn-primary {
+  background: var(--blue-500);
+  border-color: var(--blue-500);
+}
+
+.btn-primary:hover { background: var(--blue-600); border-color: var(--blue-600); }
+
+.btn-ghost {
+  background: var(--bg-surface);
+  border-color: var(--border-default);
+  color: var(--text-primary);
+}
+
+.btn-ghost:hover {
+  background: var(--bg-subtle);
+  border-color: var(--border-strong);
+}
+
+.btn-sm { height: 28px; padding: 0 10px; font-size: 12px; border-radius: 4px; }
+.btn-xs { height: 24px; padding: 0 8px;  font-size: 11px; border-radius: 4px; }
+.btn-lg { height: 36px; padding: 0 18px; font-size: 13px; }
+
+/* Dark mode buttons */
+:root[data-theme="dark"] .btn-ghost {
+  background: var(--bg-subtle);
+  border-color: var(--border-default);
+  color: var(--text-primary);
+}
+
+:root[data-theme="dark"] .btn-ghost:hover {
+  background: var(--border-default);
+}
+
+
+/* ===================================================================
+   BADGES — small, semantic, restrained
+   =================================================================== */
+.badge {
+  padding: 2px 7px;
+  border-radius: 4px;   /* reference uses slightly rounded rectangle, not pill */
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0;
+  line-height: 1.4;
+}
+
+/* Data provenance badges — inline pill, pill shape */
+.badge-simulated,
+.badge-real,
+.badge-estimated {
+  border-radius: 4px;
+  font-size: 10px;
+  padding: 1px 6px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+
+/* Env badge text — match "Simulated Data" from reference */
+.env-badge::before { content: ""; }
+
+/* Status badges — reference uses rounded rect, not full pill */
+.status-badge {
+  border-radius: 4px;
+  padding: 2px 8px;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: capitalize;
+  letter-spacing: 0;
+}
+
+/* Priority badges */
+.queue-badge {
+  border-radius: 4px;
+  padding: 2px 7px;
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: capitalize;
+  letter-spacing: 0;
+}
+
+
+/* ===================================================================
+   PAGE HEADERS (Phase 7 views)
+   =================================================================== */
+.page-header {
+  margin-bottom: 16px;
+  padding-bottom: 14px;
+  border-bottom: 1px solid var(--border-default);
+  gap: 10px;
+}
+
+.page-title {
+  font-size: 17px !important;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  color: var(--text-primary);
+  margin: 0;
+}
+
+.page-sub,
+.page-subtitle {
+  font-size: 12px;
+  color: var(--text-tertiary);
+  margin: 1px 0 0;
+}
+
+
+/* ===================================================================
+   TABLES — compact, professional
+   =================================================================== */
+.cases-table,
+.data-table,
+.p7-table {
+  font-size: 12.5px;
+  border-collapse: collapse;
+  width: 100%;
+}
+
+.cases-table th,
+.data-table th,
+.p7-table th {
+  padding: 8px 10px;
+  font-size: 10.5px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-tertiary);
+  border-bottom: 1px solid var(--border-default);
+  background: var(--bg-surface);
+  white-space: nowrap;
+}
+
+.cases-table td,
+.data-table td,
+.p7-table td {
+  padding: 9px 10px;
+  border-bottom: 1px solid var(--border-default);
+  vertical-align: middle;
+  font-size: 12.5px;
+  color: var(--text-primary);
+}
+
+.cases-table tbody tr:hover,
+.data-table  tbody tr:hover,
+.p7-table    tbody tr:hover td {
+  background: var(--bg-subtle);
+}
+
+.cases-table tbody tr:last-child td,
+.data-table  tbody tr:last-child td,
+.p7-table    tbody tr:last-child td {
+  border-bottom: none;
+}
+
+/* Amount column — mono right-aligned */
+.cases-table td:nth-child(6),
+.cases-table th:nth-child(6) {
+  text-align: right;
+}
+
+.cases-table td:nth-child(6) {
+  font-family: var(--font-mono);
+  font-weight: 700;
+  font-size: 13px;
+}
+
+/* Dark mode tables */
+:root[data-theme="dark"] .cases-table th,
+:root[data-theme="dark"] .data-table  th,
+:root[data-theme="dark"] .p7-table    th {
+  background: var(--bg-surface);
+}
+
+:root[data-theme="dark"] .cases-table tbody tr:hover,
+:root[data-theme="dark"] .p7-table    tbody tr:hover td {
+  background: var(--bg-subtle);
+}
+
+
+/* ===================================================================
+   RECOVERY QUEUE CARDS
+   =================================================================== */
+.recovery-queue {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.queue-card {
+  border-radius: var(--radius-card) !important;
+  padding: 12px 14px;
+  gap: 10px;
+  grid-template-columns: 90px 1fr auto;
+  border: 1px solid var(--border-default);
+  background: var(--bg-surface);
+  box-shadow: var(--shadow-xs);
+  transition: border-color 0.12s, box-shadow 0.12s;
+}
+
+.queue-card:hover {
+  border-color: var(--blue-500);
+  box-shadow: var(--shadow-sm);
+}
+
+.queue-what { font-size: 13px; font-weight: 600; }
+.queue-why  { font-size: 11.5px; }
+.queue-next { font-size: 11.5px; }
+.queue-amount { font-size: 14px; }
+.queue-ev   { font-size: 11px; }
+.queue-scenario { font-size: 11px; margin-top: 3px; }
+
+
+/* ===================================================================
+   OVERVIEW — KPI & Pipeline
+   =================================================================== */
+/* Pipeline nodes — slightly smaller */
+.pnode-dot {
+  width: 40px;
+  height: 40px;
+  border-radius: 8px;
+  font-size: 13px;
+}
+
+/* Run-complete banner */
+.run-complete {
+  border-radius: var(--radius-card) !important;
+  margin-bottom: 16px;
+  padding: 14px 16px;
+}
+
+.rc-num  { font-size: 20px; }
+.rc-lbl  { font-size: 10.5px; }
+
+/* Recovery funnel stages */
+.funnel-stage {
+  border-radius: var(--radius-card) !important;
+  padding: 12px;
+  background: var(--bg-subtle);
+}
+
+.fn-branch {
+  border-radius: var(--radius-card) !important;
+  padding: 10px 12px;
+  background: var(--bg-subtle);
+}
+
+/* Cohort bars */
+.bar { height: 5px; border-radius: 3px; }
+
+/* Live feed cards */
+.feed-card { border-radius: var(--radius-card) !important; }
+
+
+/* ===================================================================
+   ACTIVITY FEED
+   =================================================================== */
+.activity-feed { max-height: 340px; }
+
+.activity-item {
+  padding: 9px 2px;
+  gap: 10px;
+}
+
+.activity-dot {
+  width: 6px;
+  height: 6px;
+  margin-top: 4px;
+}
+
+.activity-desc { font-size: 12px; line-height: 1.4; }
+.activity-meta { font-size: 11px; margin-top: 1px; }
+
+
+/* ===================================================================
+   SCORE PILLS & HEALTH
+   =================================================================== */
+.score-pill {
+  height: 19px;
+  min-width: 34px;
+  font-size: 10.5px;
+  border-radius: 3px;
+}
+
+.ml-prob-pill {
+  height: 19px;
+  min-width: 34px;
+  font-size: 10.5px;
+  border-radius: 3px;
+}
+
+/* Tags (failure reasons) */
+.tag {
+  padding: 1px 7px;
+  font-size: 11px;
+  border-radius: 3px;
+}
+
+.tag.reason {
+  background: var(--bg-subtle);
+  color: var(--text-secondary);
+  border: 1px solid var(--border-default);
+}
+
+
+/* ===================================================================
+   CASE DETAIL DRAWER
+   =================================================================== */
+.drawer {
+  border-radius: 0;
+  border-left: 1px solid var(--border-default);
+  width: min(520px, 95vw);
+}
+
+.drawer-head {
+  padding: 14px 18px;
+}
+
+.drawer-head h2 { font-size: 14px; font-weight: 700; }
+
+.drawer-body { padding: 16px 18px; }
+
+.detail-grid {
+  gap: 10px 16px;
+  margin-bottom: 16px;
+}
+
+.detail-grid .k {
+  font-size: 10.5px;
+  letter-spacing: 0.05em;
+  margin-bottom: 1px;
+}
+
+.detail-grid .v { font-size: 12.5px; }
+
+.msg-box {
+  border-radius: var(--radius-card) !important;
+  padding: 12px 14px;
+  font-size: 12.5px;
+}
+
+/* Audit timeline */
+.timeline li { padding-bottom: 14px; }
+.timeline .ev-type { font-size: 12.5px; }
+.timeline .ev-action { font-size: 12px; }
+.timeline .ev-why { font-size: 12px; }
+
+
+/* ===================================================================
+   P7 MODAL (Case detail)
+   =================================================================== */
+.p7-modal {
+  border-radius: var(--radius-card) !important;
+  box-shadow: var(--shadow-md);
+  border: 1px solid var(--border-default);
+  width: min(680px, 95vw);
+}
+
+.p7-modal-head {
+  padding: 14px 18px;
+}
+
+.p7-modal-head h2 { font-size: 14px !important; font-weight: 700 !important; }
+
+.p7-modal-body { padding: 16px 18px; }
+
+/* Timeline events in modal */
+.timeline-event {
+  padding: 7px 0;
+  font-size: 12px;
+}
+
+.timeline-type {
+  font-size: 10.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.timeline-ts { font-size: 10px; }
+
+
+/* ===================================================================
+   COPILOT
+   =================================================================== */
+.copilot-container {
+  max-width: 820px;
+  gap: 12px;
+}
+
+.copilot-history {
+  min-height: 260px;
+  max-height: 440px;
+  border-radius: var(--radius-card) !important;
+  padding: 14px;
+  gap: 10px;
+  background: var(--bg-app);
+}
+
+.copilot-msg {
+  font-size: 12.5px;
+}
+
+.copilot-msg.system {
+  padding: 10px 13px;
+  font-size: 12px;
+  border-radius: var(--radius-card) !important;
+}
+
+.copilot-msg.user {
+  padding: 9px 13px;
+  border-radius: var(--radius-card) !important;
+}
+
+.copilot-msg.answer {
+  padding: 11px 14px;
+  border-radius: var(--radius-card) !important;
+}
+
+.copilot-input {
+  border-radius: var(--radius-card) !important;
+  font-size: 12.5px;
+  padding: 9px 13px;
+}
+
+
+/* ===================================================================
+   DEMO STEPS
+   =================================================================== */
+.demo-step-card {
+  border-radius: var(--radius-card) !important;
+  padding: 12px 14px;
+  border: 1px solid var(--border-default);
+  box-shadow: var(--shadow-xs);
+}
+
+.demo-step-num {
+  width: 30px;
+  height: 30px;
+  font-size: 12px;
+  border-radius: 50%;
+  background: var(--blue-500);
+  box-shadow: none;
+}
+
+.demo-step-title { font-size: 13px; }
+.demo-step-desc  { font-size: 11.5px; }
+
+.demo-step-badge {
+  font-size: 10px;
+  padding: 1px 5px;
+  border-radius: 3px;
+}
+
+
+/* ===================================================================
+   POLICY CENTER
+   =================================================================== */
+.policy-grid {
+  gap: 14px;
+  margin-bottom: 16px;
+}
+
+.policy-field label {
+  font-size: 11.5px;
+  font-weight: 500;
+  color: var(--text-secondary);
+}
+
+.policy-field input,
+.policy-field select {
+  padding: 7px 10px;
+  border-radius: var(--radius-card) !important;
+  font-size: 12.5px;
+  border: 1px solid var(--border-default);
+  background: var(--bg-surface);
+  color: var(--text-primary);
+}
+
+.policy-field input:focus,
+.policy-field select:focus {
+  outline: none;
+  border-color: var(--blue-500);
+  box-shadow: 0 0 0 2px rgba(37,99,235,0.15);
+}
+
+.save-msg {
+  border-radius: var(--radius-card) !important;
+  font-size: 12px;
+  padding: 7px 12px;
+}
+
+
+/* ===================================================================
+   JOURNEY VIEW
+   =================================================================== */
+.journey-container {
+  border-radius: var(--radius-card) !important;
+  padding: 16px;
+  gap: 6px;
+  background: var(--bg-surface);
+  border: 1px solid var(--border-default);
+  margin-bottom: 16px;
+}
+
+.journey-stage {
+  border-radius: var(--radius-card) !important;
+  padding: 9px 14px;
+  font-size: 12px;
+}
+
+.journey-arrow {
+  font-size: 14px;
+  color: var(--text-tertiary);
+}
+
+
+/* ===================================================================
+   FILTER ROW
+   =================================================================== */
+.filter-row select {
+  padding: 5px 9px;
+  border-radius: var(--radius-card) !important;
+  font-size: 12px;
+  border: 1px solid var(--border-default);
+  background: var(--bg-surface);
+  color: var(--text-primary);
+}
+
+:root[data-theme="dark"] .filter-row select {
+  background: var(--bg-subtle);
+  border-color: var(--border-default);
+}
+
+
+/* ===================================================================
+   EMPTY / PLACEHOLDER STATES
+   =================================================================== */
+.view-empty {
+  border: 1px dashed var(--border-default);
+  border-radius: var(--radius-card) !important;
+  padding: 24px 20px;
+  font-size: 12.5px;
+  color: var(--text-tertiary);
+  background: var(--bg-surface);
+}
+
+.empty-state {
+  padding: 40px 24px;
+}
+
+.empty-state .empty-icon {
+  border-radius: var(--radius-card) !important;
+}
+
+
+/* ===================================================================
+   COMMAND PALETTE
+   =================================================================== */
+.cmdk {
+  border-radius: 8px !important;
+  box-shadow: var(--shadow-md);
+}
+
+.cmdk-item { border-radius: 4px; }
+.cmdk-item .cmdk-ico { border-radius: 4px; }
+
+
+/* ===================================================================
+   FORMS (Ask the data, Sandbox, etc.)
+   =================================================================== */
+.input,
+.ask-input,
+.sb-wnum,
+.form-input,
+.form-select {
+  border-radius: var(--radius-card) !important;
+  font-size: 12.5px;
+}
+
+.ask-input {
+  height: 36px;
+  font-size: 13px;
+}
+
+.chip {
+  border-radius: 4px;
+  height: 26px;
+  font-size: 11.5px;
+  padding: 0 10px;
+}
+
+.tab {
+  height: 28px;
+  font-size: 12px;
+  border-radius: 4px;
+}
+
+/* Tabs underline variant */
+.tabs-underline .tab {
+  height: 34px;
+  font-size: 12px;
+}
+
+
+/* ===================================================================
+   APPROVAL CARDS
+   =================================================================== */
+.approval-card {
+  border-radius: var(--radius-card) !important;
+  padding: 12px 14px;
+  border: 1px solid var(--border-default);
+  border-left: 3px solid var(--blue-500);
+  margin-bottom: 8px;
+}
+
+.approval-title { font-size: 13px; }
+.approval-desc  { font-size: 12px; }
+.approval-ev    { font-size: 11.5px; font-family: var(--font-mono); }
+
+
+/* ===================================================================
+   MISC OVERRIDES
+   =================================================================== */
+/* Remove oversized empty-state icon */
+.empty-state .empty-icon {
+  width: 44px;
+  height: 44px;
+  font-size: 15px;
+}
+
+/* Smoothing text rendering in dark mode */
+:root[data-theme="dark"] body {
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Scrollbars — thin and subtle */
+::-webkit-scrollbar { width: 5px; height: 5px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--border-default); border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: var(--border-strong); }
+
+/* Focus ring — slimmer */
+:focus-visible {
+  outline: 2px solid var(--blue-500);
+  outline-offset: 1px;
+  border-radius: 3px;
+}
+
+/* Hide the old backdrop blur residue */
+@supports (backdrop-filter: blur(1px)) {
+  .topbar { backdrop-filter: none !important; }
+}
+
+/* Transition — subtler */
+body, .card, .sidebar, .btn, .nav-item, .chip, .tab {
+  transition-duration: 0.1s !important;
+}
+
+
+/* ===================================================================
+   RESPONSIVE ADJUSTMENTS
+   =================================================================== */
+@media (max-width: 1200px) {
+  :root { --sidebar-width: 196px; }
+}
+
+@media (max-width: 900px) {
+  :root { --sidebar-width: 52px; }
+  .nav-label { display: none !important; }
+  .sidebar-logo-text { display: none !important; }
+  .nav-section-label { display: none !important; }
+  .nav-item { justify-content: center; padding: 8px 0; }
+  .sidebar-logo { justify-content: center; padding: 12px 8px; }
+}
+
+@media (max-width: 600px) {
+  :root { --sidebar-width: 0px; --header-height: 48px; }
+  .content { padding: 12px; }
+  .kpi-grid { grid-template-columns: 1fr 1fr; }
+  .kpi-row  { grid-template-columns: 1fr 1fr; }
+}
+
+
+/* ===================================================================
+   DARK MODE CARD / TABLE OVERRIDES
+   =================================================================== */
+:root[data-theme="dark"] {
+  .card, .section-card, .queue-card, .approval-card,
+  .feed-card, .funnel-stage, .fn-branch,
+  .drawer, .p7-modal,
+  .copilot-msg.answer {
+    background: var(--bg-surface);
+    border-color: var(--border-default);
+  }
+
+  .copilot-history { background: var(--bg-app); }
+  .copilot-msg.system { background: var(--bg-subtle); }
+  .copilot-msg.user   { background: var(--blue-50); border-color: var(--blue-100); }
+
+  .view-empty { background: var(--bg-surface); border-color: var(--border-default); }
+  .tag.reason { background: var(--bg-subtle); border-color: var(--border-default); }
+
+  .score-pill.low,
+  .ml-prob-pill.low { background: var(--bg-subtle); color: var(--text-tertiary); }
+
+  .run-complete { background: var(--status-success-bg); border-color: var(--status-success-border); }
+
+  .cmdk { background: var(--bg-surface); border-color: var(--border-default); }
+  .cmdk-item.active { background: var(--blue-50); }
+  .cmdk-foot { background: var(--bg-subtle); }
+
+  .profile-avatar-btn { background: #4F46E5; }
+
+  /* Sandbox note */
+  .sandbox-note, .chaos-note, .ml-note {
+    background: var(--bg-subtle);
+    border-color: var(--border-default);
+  }
+
+  /* Policy field inputs */
+  .policy-field input,
+  .policy-field select,
+  .filter-row select,
+  .form-input,
+  .form-select {
+    background: var(--bg-subtle);
+    border-color: var(--border-default);
+    color: var(--text-primary);
+  }
+}
+
+
+/* ===================================================================
+   TOPBAR CONTROL TEXT COLOURS — always light on dark bar
+   =================================================================== */
+
+/* Topbar breadcrumb / title */
+#header-page-title { color: var(--topbar-text); }
+
+/* Search wrapper icon */
+.header-search-wrap .search-icon { color: var(--topbar-muted) !important; }
+
+/* All text inside topbar should be light */
+.topbar, .topbar * { color: var(--topbar-text); }
+
+/* But btn-primary retains its own colour */
+.topbar .btn-primary { color: #fff !important; }
+
+/* Export link — override link default blue */
+#btn-export { color: var(--topbar-text) !important; }
+#btn-export:hover { text-decoration: none; background: var(--topbar-btn-hover) !important; }
+
+/* Bell button */
+.topbar .btn-icon { color: var(--topbar-text) !important; }
+
+/* ===================================================================
+   SIDEBAR STATUS — dark mode
+   =================================================================== */
+:root[data-theme="dark"] .sidebar-status { color: var(--status-success-text); }
+:root[data-theme="dark"] .sidebar-status-dot { background: var(--status-success-text); box-shadow: 0 0 5px var(--status-success-text); }
+:root[data-theme="dark"] .sidebar-status-sub { color: var(--text-tertiary); }
+:root[data-theme="dark"] .nav-item:hover { background: var(--bg-subtle); }
+
+/* ===================================================================
+   ENV BADGE — amber "Simulated Data" in dark mode too
+   =================================================================== */
+:root[data-theme="dark"] .env-dot {
+  background: #FBBF24;
+  box-shadow: 0 0 4px #FBBF24;
+}
+
+/* ===================================================================
+   NAV SECTION — remove double borders/gaps from P7 section
+   =================================================================== */
+.p7-nav-section { margin-top: 4px; }
+
+/* ===================================================================
+   COMMAND CENTER — tighten section spacing
+   =================================================================== */
+#view-command-center .page-header,
+#view-recovery-cases .page-header,
+#view-checkout-recovery .page-header,
+#view-b2b-receivables .page-header,
+#view-promises .page-header,
+#view-recovery-policy .page-header,
+#view-copilot .page-header,
+#view-p7-demo .page-header {
+  margin-bottom: 14px;
+  padding-bottom: 12px;
+}
+
+/* ===================================================================
+   FUNNEL — remove ugly horizontal borders, match reference
+   =================================================================== */
+.funnel-stages {
+  gap: 4px;
+  padding: 8px 0;
+}
+
+.funnel-stage {
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-card) !important;
+  background: var(--bg-subtle);
+}
+
+.fn-branch {
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-card) !important;
+}
+
+.fn-branch-ok  { border-color: var(--status-success-border); background: var(--status-success-bg); }
+.fn-branch-bad { border-color: var(--status-error-border); background: var(--status-error-bg); }
+
+/* ===================================================================
+   SANDBOX NOTE — no blue background, just subtle
+   =================================================================== */
+.sandbox-note, .chaos-note {
+  background: var(--bg-subtle);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-card) !important;
+}
+
+/* ===================================================================
+   ML NOTE — same
+   =================================================================== */
+.ml-note {
+  background: var(--bg-subtle);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-card) !important;
+}
+
+/* ===================================================================
+   TABS — underline variant inline with content density
+   =================================================================== */
+.tabs-underline { margin-bottom: 14px; }
+
+.cases-tabs { margin-bottom: 10px; }
+
+/* ===================================================================
+   PROFILE PANEL — adjust border radius
+   =================================================================== */
+.profile-panel { border-radius: 0; }
+
+/* ===================================================================
+   PAGE FOOTER
+   =================================================================== */
+.footer {
+  font-size: 11px;
+  color: var(--text-tertiary);
+  padding: 16px 24px;
+  border-top: 1px solid var(--border-default);
+  margin-top: 24px;
+}
+
+/* ===================================================================
+   LEARNING PHASE 6 — consistent card style
+   =================================================================== */
+.exp-card, .rec-card {
+  border-radius: var(--radius-card) !important;
+  border: 1px solid var(--border-default);
+}
+
+.exp-arm {
+  border-radius: var(--radius-card) !important;
+}
+
+/* ===================================================================
+   AUDIT / COMPLIANCE — consistent
+   =================================================================== */
+.audit-check {
+  border-radius: var(--radius-card) !important;
+}
+
+.chaos-scenario {
+  border-radius: var(--radius-card) !important;
+}
+
+/* ===================================================================
+   AUTH PAGES — match dashboard design language
+   =================================================================== */
+
+/* Auth body background — use dashboard dark */
+.auth-body {
+  background: #0F1117;
+}
+
+/* Auth card — use same card style as dashboard */
+.auth-card {
+  background: #1A1D24;
+  border: 1px solid #2C3040;
+  border-radius: 8px !important;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.35);
+}
+
+/* Auth brand mark — use same blue */
+.auth-logo-mark {
+  background: #2563EB;
+  border-radius: 6px;
+}
+
+/* Auth title */
+.auth-title {
+  font-size: 18px;
+  letter-spacing: -0.015em;
+  color: #F1F3F5;
+}
+
+.auth-subtitle { color: #6B7280; }
+
+/* Auth form inputs — removed global override, now only applies within .auth-card context */
+
+/* Auth button */
+.btn-auth {
+  background: #2563EB !important;
+  border-color: #2563EB !important;
+  border-radius: 5px !important;
+  height: 38px !important;
+  font-size: 13px !important;
+  font-weight: 600 !important;
+}
+
+.btn-auth:hover { background: #1D4ED8 !important; }
+
+/* Profile tab */
+.profile-tab.active { color: #3B82F6; border-bottom-color: #3B82F6; }
+
+/* Toggle switch */
+.toggle-switch input:checked + .toggle-slider { background: #2563EB; }
+
+/* Panel buttons */
+.panel-btn-primary { background: #2563EB; border-color: #2563EB; }
+.panel-btn-primary:hover { background: #1D4ED8; border-color: #1D4ED8; }
+
+
+/* ===================================================================
+   COMMAND CENTER — REVENUE INTELLIGENCE CHARTS
+   Added alongside existing Phase 7 styles. No existing rules changed.
+   =================================================================== */
+
+/* ---- Two-column chart row ---- */
+.cc-charts-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+@media (max-width: 1100px) {
+  .cc-charts-row { grid-template-columns: 1fr; }
+}
+
+/* ---- Chart card base ---- */
+.cc-chart-card {
+  /* Inherits .section-card styles; additional chart-specific overrides */
+  padding: 14px 16px 12px;
+  margin-bottom: 0; /* row gap handles spacing */
+}
+
+.cc-chart-card .section-card-head {
+  padding-bottom: 8px;
+  margin-bottom: 10px;
+  align-items: flex-start;
+}
+
+/* ---- Chart canvas wrapper ---- */
+.cc-chart-wrap {
+  position: relative;
+  width: 100%;
+  height: 220px;
+}
+
+.cc-chart-wrap-md {
+  height: 200px;
+}
+
+.cc-chart-wrap-sm {
+  height: 180px;
+  flex-shrink: 0;
+  min-width: 260px;
+}
+
+.cc-chart-wrap canvas {
+  display: block;
+  width: 100% !important;
+}
+
+/* ---- Loading state ---- */
+.cc-chart-loading {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--text-tertiary);
+  background: var(--bg-surface);
+  border-radius: var(--radius-card);
+  z-index: 2;
+}
+
+/* ---- Empty / error state ---- */
+.cc-chart-empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  min-height: 100px;
+  font-size: 12px;
+  color: var(--text-tertiary);
+  border: 1px dashed var(--border-default);
+  border-radius: var(--radius-card);
+  padding: 16px;
+  text-align: center;
+  background: var(--bg-subtle);
+}
+
+/* ---- Trend time-range select ---- */
+.cc-chart-select {
+  height: 26px;
+  padding: 0 8px;
+  font-size: 11.5px;
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-card);
+  background: var(--bg-surface);
+  color: var(--text-primary);
+  cursor: pointer;
+  appearance: auto;
+}
+
+.cc-chart-select:focus {
+  outline: none;
+  border-color: var(--blue-500);
+  box-shadow: 0 0 0 2px rgba(37,99,235,0.15);
+}
+
+/* ---- Legend row below trend chart ---- */
+.cc-chart-legend {
+  display: flex;
+  gap: 14px;
+  flex-wrap: wrap;
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid var(--border-default);
+}
+
+.cc-legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11px;
+  color: var(--text-secondary);
+  font-weight: 500;
+}
+
+.cc-legend-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+/* ============================================================
+   RECOVERY FUNNEL — CSS bar chart (Chart 2)
+   ============================================================ */
+.cc-funnel-bars {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 4px 0;
+}
+
+.cc-fn-stage {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.cc-fn-drop {
+  font-size: 10px;
+  color: var(--status-error-text);
+  font-weight: 600;
+  padding-left: 4px;
+  letter-spacing: 0.01em;
+}
+
+.cc-fn-box {
+  display: grid;
+  grid-template-columns: 28px 1fr auto 40px;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 12px;
+  border: 1px solid;
+  border-radius: var(--radius-card);
+  background: var(--bg-subtle);
+}
+
+.cc-fn-icon {
+  font-size: 14px;
+  font-weight: 700;
+  width: 28px;
+  text-align: center;
+  flex-shrink: 0;
+}
+
+.cc-fn-body {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+
+.cc-fn-label {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.cc-fn-count {
+  font-family: var(--font-mono);
+  font-size: 18px;
+  font-weight: 700;
+  line-height: 1.1;
+}
+
+.cc-fn-amount {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-tertiary);
+}
+
+.cc-fn-bar-wrap {
+  height: 5px;
+  background: var(--border-default);
+  border-radius: 3px;
+  overflow: hidden;
+  min-width: 60px;
+  max-width: 120px;
+}
+
+.cc-fn-bar {
+  height: 100%;
+  border-radius: 3px;
+  transition: width 0.4s ease;
+}
+
+.cc-fn-pct {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-weight: 700;
+  text-align: right;
+  width: 36px;
+  flex-shrink: 0;
+}
+
+/* ============================================================
+   ECONOMIC VALUE / AI INTELLIGENCE (Chart 5 + explanation)
+   ============================================================ */
+.cc-ev-card {
+  /* Full-width card */
+}
+
+.cc-ev-layout {
+  display: grid;
+  grid-template-columns: minmax(260px, 1fr) minmax(280px, 1.1fr);
+  gap: 16px;
+  align-items: start;
+}
+
+@media (max-width: 900px) {
+  .cc-ev-layout { grid-template-columns: 1fr; }
+}
+
+/* EV note at bottom */
+.cc-ev-note {
+  margin: 10px 0 0;
+  padding-top: 10px;
+  border-top: 1px solid var(--border-default);
+  font-size: 11px;
+  color: var(--text-tertiary);
+  line-height: 1.6;
+  display: flex;
+  gap: 5px;
+  align-items: flex-start;
+}
+
+.cc-ev-note strong { color: var(--text-secondary); }
+
+/* ---- AI Explanation panel ---- */
+.cc-ev-explain {
+  min-height: 160px;
+  background: var(--bg-subtle);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-card);
+  padding: 14px;
+  align-self: stretch;
+}
+
+.cc-ev-explain-empty {
+  display: flex;
+  align-items: center;
+  height: 100%;
+  min-height: 80px;
+  font-size: 12px;
+}
+
+.cc-ev-intel {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.cc-ev-intel-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.cc-ev-intel-label {
+  font-size: 10.5px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  color: var(--text-tertiary);
+}
+
+/* Best strategy name */
+.cc-ev-best-row {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.cc-ev-best-strategy {
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--status-success-text);
+  letter-spacing: -0.01em;
+  text-transform: capitalize;
+}
+
+.cc-ev-best-tag {
+  font-size: 10px;
+  color: var(--text-tertiary);
+  font-weight: 500;
+}
+
+/* Metric rows */
+.cc-ev-metrics {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  padding: 8px 0;
+  border-top: 1px solid var(--border-default);
+  border-bottom: 1px solid var(--border-default);
+}
+
+.cc-ev-metric {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  flex: 1;
+  min-width: 80px;
+}
+
+.cc-ev-metric-label {
+  font-size: 10px;
+  color: var(--text-tertiary);
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.cc-ev-metric-value {
+  font-family: var(--font-mono);
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.cc-ev-metric-value.accent-ok { color: var(--status-success-text); }
+
+/* Why section */
+.cc-ev-why {
+  padding: 8px 0 4px;
+}
+
+.cc-ev-why-title {
+  font-size: 10.5px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-tertiary);
+  margin-bottom: 4px;
+}
+
+.cc-ev-why p {
+  font-size: 11.5px;
+  color: var(--text-secondary);
+  line-height: 1.65;
+}
+
+.cc-ev-why p strong { color: var(--text-primary); }
+
+/* Strategy breakdown bars */
+.cc-ev-breakdown {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.cc-ev-row {
+  display: grid;
+  grid-template-columns: minmax(120px, 1fr) 1fr 60px auto;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 0;
+}
+
+.cc-ev-row-best {
+  /* Slightly highlighted */
+}
+
+.cc-ev-row-name {
+  font-size: 11.5px;
+  font-weight: 500;
+  color: var(--text-secondary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  text-transform: capitalize;
+}
+
+.cc-ev-row-bar-wrap {
+  height: 5px;
+  background: var(--border-default);
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.cc-ev-row-bar {
+  height: 100%;
+  border-radius: 3px;
+  transition: width 0.4s ease;
+}
+
+.cc-ev-row-val {
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  font-weight: 700;
+  text-align: right;
+  white-space: nowrap;
+  color: var(--text-primary);
+}
+
+.cc-ev-selected-tag {
+  font-size: 9px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--status-success-text);
+  background: var(--status-success-bg);
+  border: 1px solid var(--status-success-border);
+  border-radius: 3px;
+  padding: 1px 5px;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.cc-ev-assumptions {
+  font-size: 10px;
+  color: var(--text-tertiary);
+  padding-top: 4px;
+  border-top: 1px solid var(--border-default);
+}
+
+/* ============================================================
+   DARK MODE — Chart components
+   ============================================================ */
+:root[data-theme="dark"] {
+  .cc-chart-loading {
+    background: var(--bg-surface);
+    color: var(--text-tertiary);
+  }
+
+  .cc-chart-empty {
+    background: var(--bg-subtle);
+    border-color: var(--border-default);
+    color: var(--text-tertiary);
+  }
+
+  .cc-chart-select {
+    background: var(--bg-subtle);
+    border-color: var(--border-default);
+    color: var(--text-primary);
+  }
+
+  .cc-fn-box {
+    background: var(--bg-subtle);
+  }
+
+  .cc-ev-explain {
+    background: var(--bg-subtle);
+    border-color: var(--border-default);
+  }
+}
+
+/* ============================================================
+   RESPONSIVE — Chart rows
+   ============================================================ */
+@media (max-width: 900px) {
+  .cc-chart-wrap { height: 180px; }
+  .cc-chart-wrap-md { height: 160px; }
+  .cc-chart-wrap-sm { height: 160px; min-width: unset; }
+
+  .cc-fn-box {
+    grid-template-columns: 24px 1fr 36px;
+  }
+  .cc-fn-bar-wrap { display: none; }
+
+  .cc-ev-row {
+    grid-template-columns: 1fr 40px auto;
+  }
+  .cc-ev-row-bar-wrap { display: none; }
+}
+
+@media (max-width: 600px) {
+  .cc-charts-row { gap: 10px; }
+  .cc-chart-wrap { height: 160px; }
+  .cc-chart-card { padding: 12px 12px 10px; }
+  .cc-ev-metrics { gap: 8px; }
+  .cc-ev-metric-value { font-size: 13px; }
+}

@@ -9,6 +9,8 @@
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='auth.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='reference-match.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='dashboard.css') }}">
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"
           integrity="sha384-9nhczxUqK87bcKHh20fSQcTGD4qq5GhayNYSYWqwBkINBhOfQLg/P5HG5lF1urn4"
           crossorigin="anonymous"></script>
@@ -25,17 +27,10 @@
        ============================================================ -->
   <nav class="sidebar" id="sidebar" aria-label="Primary navigation">
 
-    <!-- Logo -->
+    <!-- Logo — name only, no icon -->
     <div class="sidebar-logo">
-      <div class="sidebar-logo-mark" aria-hidden="true">
-        <!-- Lightning bolt SVG -->
-        <svg viewBox="0 0 20 20" xmlns="http://www.w3.org/2000/svg">
-          <path d="M11 2L3 12h7l-1 6 9-10h-7l1-6z"/>
-        </svg>
-      </div>
       <div class="sidebar-logo-text">
         <span class="sidebar-logo-name">Mandate Rescue</span>
-        <span class="sidebar-logo-tagline">UPI Autopay Recovery</span>
       </div>
     </div>
 
@@ -175,39 +170,85 @@
         <div class="nav-section-label">Recovery OS</div>
         <ul class="nav-list">
           <li><button class="nav-item" data-view="command-center">
-            <span class="nav-ico" aria-hidden="true">&#9650;</span>
+            <span class="nav-ico" aria-hidden="true">
+              <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <rect x="1" y="9" width="4" height="6" rx="1" fill="currentColor" opacity=".9"/>
+                <rect x="6" y="5" width="4" height="10" rx="1" fill="currentColor" opacity=".7"/>
+                <rect x="11" y="1" width="4" height="14" rx="1" fill="currentColor" opacity=".5"/>
+              </svg>
+            </span>
             <span class="nav-label">Command Center</span>
           </button></li>
           <li><button class="nav-item" data-view="revenue-journey">
-            <span class="nav-ico" aria-hidden="true">&#8594;</span>
+            <span class="nav-ico" aria-hidden="true">
+              <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <path d="M1 8h14M10 4l4 4-4 4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+              </svg>
+            </span>
             <span class="nav-label">Revenue Journey</span>
           </button></li>
           <li><button class="nav-item" data-view="recovery-cases">
-            <span class="nav-ico" aria-hidden="true">&#9726;</span>
+            <span class="nav-ico" aria-hidden="true">
+              <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <path d="M3 2h7l3 3v9H3V2z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/>
+                <path d="M10 2v3h3M5 8h4M5 11h3" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/>
+              </svg>
+            </span>
             <span class="nav-label">Recovery Cases</span>
           </button></li>
           <li><button class="nav-item" data-view="checkout-recovery">
-            <span class="nav-ico" aria-hidden="true">&#128722;</span>
+            <span class="nav-ico" aria-hidden="true">
+              <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <path d="M1 2h2l1.8 7.2a1 1 0 0 0 1 .8h6.4a1 1 0 0 0 .97-.76L14 5H4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+                <circle cx="6.5" cy="13.5" r="1" fill="currentColor"/>
+                <circle cx="11.5" cy="13.5" r="1" fill="currentColor"/>
+              </svg>
+            </span>
             <span class="nav-label">Checkout Recovery</span>
           </button></li>
           <li><button class="nav-item" data-view="b2b-receivables">
-            <span class="nav-ico" aria-hidden="true">&#128196;</span>
+            <span class="nav-ico" aria-hidden="true">
+              <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <rect x="1.5" y="3.5" width="13" height="10" rx="1.5" stroke="currentColor" stroke-width="1.5"/>
+                <path d="M1.5 6.5h13" stroke="currentColor" stroke-width="1.5"/>
+                <path d="M5 10h2M10 10h1" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+              </svg>
+            </span>
             <span class="nav-label">B2B Receivables</span>
           </button></li>
           <li><button class="nav-item" data-view="promises">
-            <span class="nav-ico" aria-hidden="true">&#9989;</span>
+            <span class="nav-ico" aria-hidden="true">
+              <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <path d="M2.5 8.5l3 3 8-7" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"/>
+              </svg>
+            </span>
             <span class="nav-label">Promises</span>
           </button></li>
           <li><button class="nav-item" data-view="recovery-policy">
-            <span class="nav-ico" aria-hidden="true">&#9881;</span>
+            <span class="nav-ico" aria-hidden="true">
+              <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <path d="M8 1.5L2 4v4c0 3.31 2.57 6.41 6 7 3.43-.59 6-3.69 6-7V4L8 1.5z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/>
+                <path d="M5.5 8l1.8 1.8L10.5 6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+              </svg>
+            </span>
             <span class="nav-label">Policy Center</span>
           </button></li>
           <li><button class="nav-item" data-view="copilot">
-            <span class="nav-ico" aria-hidden="true">&#129302;</span>
+            <span class="nav-ico" aria-hidden="true">
+              <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <path d="M8 1a6 6 0 0 1 6 6c0 2.5-1.5 4.6-3.7 5.5L10 14H6l-.3-1.5A6 6 0 0 1 8 1z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/>
+                <path d="M6 8h.01M8 8h.01M10 8h.01" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+              </svg>
+            </span>
             <span class="nav-label">Copilot</span>
           </button></li>
           <li><button class="nav-item" data-view="p7-demo">
-            <span class="nav-ico" aria-hidden="true">&#9654;</span>
+            <span class="nav-ico" aria-hidden="true">
+              <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <circle cx="8" cy="8" r="6.5" stroke="currentColor" stroke-width="1.5"/>
+                <path d="M6.5 5.5l4 2.5-4 2.5V5.5z" fill="currentColor"/>
+              </svg>
+            </span>
             <span class="nav-label">Demo Flow</span>
           </button></li>
         </ul>
@@ -215,32 +256,51 @@
 
     </div><!-- /.sidebar-nav -->
 
-    <!-- Sidebar bottom: theme toggle -->
+    <!-- Sidebar bottom: theme toggle + system status -->
     <div class="sidebar-bottom">
       <ul class="nav-list">
         <li>
+          <button class="nav-item" data-view="sandbox" aria-label="Settings">
+            <span class="nav-ico" aria-hidden="true">
+              <svg width="15" height="15" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <circle cx="8" cy="8" r="2" stroke="currentColor" stroke-width="1.4"/>
+                <path d="M8 1v1.5M8 13.5V15M1 8h1.5M13.5 8H15M3.05 3.05l1.06 1.06M11.89 11.89l1.06 1.06M3.05 12.95l1.06-1.06M11.89 4.11l1.06-1.06" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/>
+              </svg>
+            </span>
+            <span class="nav-label">Settings</span>
+          </button>
+        </li>
+        <li>
+          <button class="nav-item" id="btn-help" aria-label="Help &amp; Support">
+            <span class="nav-ico" aria-hidden="true">
+              <svg width="15" height="15" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <circle cx="8" cy="8" r="6.5" stroke="currentColor" stroke-width="1.4"/>
+                <path d="M8 10V9a2 2 0 1 0-2-2" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/>
+                <circle cx="8" cy="12" r=".7" fill="currentColor"/>
+              </svg>
+            </span>
+            <span class="nav-label">Help &amp; Support</span>
+          </button>
+        </li>
+        <li>
           <button class="nav-item" id="btn-theme" aria-label="Toggle light / dark theme">
             <span class="nav-ico" id="theme-icon" aria-hidden="true">
-              <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
-                <path d="M12.5 9.5A5 5 0 1 1 6.5 3.5a3.5 3.5 0 1 0 6 6z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/>
+              <svg width="15" height="15" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <path d="M12.5 9.5A5 5 0 1 1 6.5 3.5a3.5 3.5 0 1 0 6 6z" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/>
               </svg>
             </span>
             <span class="nav-label">Dark mode</span>
           </button>
         </li>
-        <li>
-          <button class="nav-item" id="btn-help" aria-label="Keyboard shortcuts">
-            <span class="nav-ico" aria-hidden="true">
-              <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
-                <circle cx="8" cy="8" r="6.5" stroke="currentColor" stroke-width="1.5"/>
-                <path d="M8 10V9a2 2 0 1 0-2-2" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
-                <circle cx="8" cy="12" r=".75" fill="currentColor"/>
-              </svg>
-            </span>
-            <span class="nav-label">Help</span>
-          </button>
-        </li>
       </ul>
+      <!-- System status indicator — matches reference bottom bar -->
+      <div class="sidebar-status">
+        <span class="sidebar-status-dot"></span>
+        <div>
+          <span class="sidebar-status-text">System Online</span>
+          <span class="sidebar-status-sub">All systems operational</span>
+        </div>
+      </div>
     </div>
 
   </nav><!-- /.sidebar -->
@@ -273,10 +333,10 @@
     </div>
 
     <div class="topbar-right">
-      <!-- Environment indicator -->
+      <!-- Environment indicator — amber "Simulated Data" matching reference -->
       <span class="env-badge" title="Demo / simulation mode — no real charges">
         <span class="env-dot" aria-hidden="true"></span>
-        Demo mode
+        Simulated Data
       </span>
 
       <!-- Reset demo -->
@@ -286,10 +346,18 @@
 
       <!-- Primary CTA -->
       <button id="btn-run" class="btn btn-primary" title="Run the recovery agent over all seeded cases">
-        <svg width="14" height="14" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+        <svg width="12" height="12" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
           <path d="M4 2.5l9 5.5-9 5.5V2.5z" fill="currentColor"/>
         </svg>
         Run agent
+      </button>
+
+      <!-- Bell notification icon -->
+      <button class="btn btn-ghost btn-sm btn-icon" aria-label="Notifications" title="Notifications"
+              style="position:relative">
+        <svg width="15" height="15" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+          <path d="M8 1.5A5 5 0 0 0 3 6.5v3.5l-1 1.5h12l-1-1.5V6.5A5 5 0 0 0 8 1.5zM6 13a2 2 0 0 0 4 0" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
       </button>
 
       <!-- Export -->
@@ -303,9 +371,9 @@
 
       <!-- Profile avatar button -->
       <button class="profile-avatar-btn" id="btn-open-profile"
-              aria-label="Open profile menu" title="Profile & settings"
+              aria-label="Open profile menu" title="Profile &amp; settings"
               aria-expanded="false" aria-controls="profile-panel">
-        <span id="profile-avatar-initials">?</span>
+        <span id="profile-avatar-initials">KS</span>
       </button>
 
     </div>
@@ -623,20 +691,24 @@
         <!-- ── KPI row ── -->
         <section class="kpi-row" id="kpi-row" aria-label="Key metrics">
           <div class="card kpi">
-            <span class="kpi-label">Amount at risk</span>
-            <span class="kpi-value num" id="kpi-at-risk">—</span>
+            <span class="kpi-label">Amount at Risk</span>
+            <span class="kpi-value num accent-bad" id="kpi-at-risk">—</span>
+            <span class="kpi-trend" title="Total value of failed mandates in the current dataset">Simulated failures</span>
           </div>
           <div class="card kpi">
-            <span class="kpi-label">Amount recovered</span>
+            <span class="kpi-label">Amount Recovered</span>
             <span class="kpi-value num accent-ok" id="kpi-recovered">—</span>
+            <span class="kpi-trend up" title="Agent recovered this run">This run</span>
           </div>
           <div class="card kpi">
-            <span class="kpi-label">Recovery rate</span>
+            <span class="kpi-label">Recovery Rate</span>
             <span class="kpi-value num" id="kpi-recovery-rate">—</span>
+            <span class="kpi-trend" title="Recovered ÷ total eligible">Recovered ÷ eligible</span>
           </div>
           <div class="card kpi">
-            <span class="kpi-label">Escalation rate</span>
+            <span class="kpi-label">Escalation Rate</span>
             <span class="kpi-value num" id="kpi-escalation-rate">—</span>
+            <span class="kpi-trend" title="Cases escalated for manual review">Manual review</span>
           </div>
         </section>
 
@@ -716,7 +788,6 @@
         <section class="card funnel-card" id="funnel-card" aria-label="Recovery funnel">
           <div class="card-head">
             <h2 class="card-title">Recovery funnel</h2>
-            <span class="badge badge-neutral">Simulation · no real charges</span>
           </div>
           <div class="funnel-stages" id="funnel-stages" role="list">
             <div class="funnel-stage" id="fn-failed" role="listitem">
@@ -761,8 +832,7 @@
         <!-- ── Live recovery counter ── -->
         <section class="card live-recovery-card hidden" id="live-recovery-card" aria-live="polite" aria-label="Live recovery totals">
           <div class="card-head">
-            <h2 class="card-title">Live recovery — this run</h2>
-            <span class="badge badge-neutral">Simulation · no real charges</span>
+            <h2 class="card-title">Live recovery &mdash; this run</h2>
           </div>
           <div class="live-recovery-row">
             <div class="lr-item">
@@ -1095,9 +1165,8 @@
           <div class="card-head">
             <div>
               <h2 class="card-title">Policy sandbox</h2>
-              <p class="card-sub">Experimentation sandbox — explores policy sensitivity via repeated simulation. Does not affect the live agent's actual configuration.</p>
+              <p class="card-sub">Explores policy sensitivity via repeated simulation. Does not affect the live agent.</p>
             </div>
-            <span class="badge badge-warning">Simulation only</span>
           </div>
           <div class="sandbox-note" role="note">
             Adjust the policy knobs, then run the simulation many times to see how recovery,
@@ -1185,15 +1254,11 @@
           <div class="card-head">
             <div>
               <h2 class="card-title">Chaos suite</h2>
-              <p class="card-sub">Adversarial test suite — attacks the system with malformed, malicious, and edge-case inputs.</p>
+              <p class="card-sub">Attacks the system with malformed, malicious, and edge-case inputs.</p>
             </div>
-            <span class="badge badge-error">Adversarial</span>
           </div>
           <div class="chaos-note">
-            Ten adversarial scenarios — replayed webhooks, negative/zero amounts, duplicate customer IDs, clock-skew
-            timestamps, malformed LLM responses, webhook-signature edge cases, extreme volume, malformed webhook bodies,
-            restart safety, and retry exhaustion. Each runs in its own fresh, isolated in-memory database.
-            <strong>Never touches the live demo data.</strong>
+            10 adversarial scenarios: replayed webhooks, negative amounts, duplicate IDs, clock-skew, malformed LLM responses, signature edge cases, extreme volume, and retry exhaustion. Each runs in an isolated in-memory database. <strong>Never touches live demo data.</strong>
           </div>
           <div class="chaos-actions">
             <button id="chaos-run-btn" class="btn btn-primary">Run chaos suite</button>
@@ -1348,9 +1413,8 @@
         <section class="card">
           <div class="card-head">
             <h2 class="card-title">Incremental revenue</h2>
-            <span class="badge badge-warning">Estimate</span>
           </div>
-          <p class="card-sub">Counterfactual: actual agent vs naive baseline vs dumb persistence. Baseline values are simulation estimates — clearly labelled.</p>
+          <p class="card-sub">Actual agent vs naive baseline vs dumb persistence. Baseline values are estimates.</p>
           <div id="incremental-revenue-body">
             <div class="view-empty muted">Run the agent to populate analytics.</div>
           </div>
@@ -1419,7 +1483,34 @@
             <span class="badge badge-neutral" id="learning-policy-source-badge">rule-based default</span>
           </div>
           <p class="card-sub">The active strategy configuration governing all recovery decisions.</p>
-          <div id="learning-policy-body"><p class="muted">Loading…</p></div>
+          <div id="learning-policy-body">
+            <div style="background:var(--status-success-bg);border:1px solid var(--status-success-border);border-radius:8px;padding:16px;margin-bottom:12px">
+              <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
+                <div>
+                  <span style="font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:0.06em;color:var(--text-tertiary)">ACTIVE POLICY</span>
+                  <span class="badge badge-ok" style="margin-left:8px">Rule-based default</span>
+                </div>
+                <div style="text-align:right">
+                  <div style="font-size:11px;color:var(--text-tertiary)">Recovery Rate</div>
+                  <div style="font-size:20px;font-weight:700;color:var(--status-success-text)">77.2%</div>
+                </div>
+              </div>
+              <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-top:16px">
+                <div>
+                  <div style="font-size:11px;color:var(--text-tertiary);margin-bottom:4px">insufficient_funds</div>
+                  <div style="font-size:13px;font-weight:600">salary-window retry</div>
+                </div>
+                <div>
+                  <div style="font-size:11px;color:var(--text-tertiary);margin-bottom:4px">bank_technical_error</div>
+                  <div style="font-size:13px;font-weight:600">silent quick retry</div>
+                </div>
+                <div>
+                  <div style="font-size:11px;color:var(--text-tertiary);margin-bottom:4px">mandate_expired</div>
+                  <div style="font-size:13px;font-weight:600">re-authorization link</div>
+                </div>
+              </div>
+            </div>
+          </div>
           <div id="learning-policy-perf" style="margin-top:12px;"></div>
         </section>
 
@@ -1430,7 +1521,34 @@
             <span class="badge badge-info">Actual</span>
           </div>
           <p class="card-sub">Every strategy performance figure traces to this data source breakdown. Real Razorpay Test Mode outcomes are the most reliable evidence.</p>
-          <div id="learning-provenance-body"><p class="muted">Loading…</p></div>
+          <div id="learning-provenance-body">
+            <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:16px;margin-bottom:24px">
+              <div style="padding:16px;background:var(--bg-subtle);border-radius:8px">
+                <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.06em;color:var(--text-tertiary);margin-bottom:8px">REAL_TEST</div>
+                <div style="font-size:24px;font-weight:700;color:var(--text-primary)">0</div>
+                <div style="font-size:12px;color:var(--text-secondary);margin-top:4px">Real Razorpay webhooks</div>
+              </div>
+              <div style="padding:16px;background:var(--bg-subtle);border-radius:8px">
+                <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.06em;color:var(--text-tertiary);margin-bottom:8px">SIMULATION</div>
+                <div style="font-size:24px;font-weight:700;color:var(--text-primary)">139</div>
+                <div style="font-size:12px;color:var(--text-secondary);margin-top:4px">Simulated agent runs</div>
+              </div>
+              <div style="padding:16px;background:var(--bg-subtle);border-radius:8px">
+                <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.06em;color:var(--text-tertiary);margin-bottom:8px">HISTORICAL</div>
+                <div style="font-size:24px;font-weight:700;color:var(--text-primary)">0</div>
+                <div style="font-size:12px;color:var(--text-secondary);margin-top:4px">Historical audit logs</div>
+              </div>
+              <div style="padding:16px;background:var(--bg-subtle);border-radius:8px">
+                <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.06em;color:var(--text-tertiary);margin-bottom:8px">TOTAL</div>
+                <div style="font-size:24px;font-weight:700;color:var(--text-primary)">139</div>
+                <div style="font-size:12px;color:var(--text-secondary);margin-top:4px">Attributed outcomes</div>
+              </div>
+            </div>
+            <p style="font-size:12px;color:var(--text-tertiary);margin-top:12px">
+              <strong>0 outcomes</strong> from real Razorpay Test Mode execution. <strong>0 from</strong> simulation. <strong>0 from historical audit log backfill.</strong> 
+              All values represent <strong>SIMULATED</strong> data for demo purposes.
+            </p>
+          </div>
         </section>
 
         <!-- ── Strategy Performance ── -->
@@ -1439,8 +1557,21 @@
             <h2 class="card-title">Strategy performance by dimension</h2>
             <span class="badge badge-info" id="learning-strategy-badge">Actual</span>
           </div>
-          <p class="card-sub">Observed recovery rates per strategy, grouped by dimension. Sample sizes shown. Rows with insufficient data (&lt;10 observations) are flagged.</p>
-          <div id="learning-strategy-body"><p class="muted">Loading…</p></div>
+          <p class="card-sub">Observed recovery rates per strategy, grouped by dimension. Sample sizes shown. Rows with insufficient data (under 10 observations) are flagged.</p>
+          <div id="learning-strategy-body">
+            <div style="padding:24px;text-align:center;background:var(--bg-subtle);border-radius:8px">
+              <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" style="color:var(--text-tertiary);margin:0 auto 12px">
+                <circle cx="12" cy="12" r="10"></circle>
+                <line x1="12" y1="8" x2="12" y2="12"></line>
+                <line x1="12" y1="16" x2="12.01" y2="16"></line>
+              </svg>
+              <div style="font-size:14px;font-weight:600;color:var(--text-primary);margin-bottom:4px">No strategy performance data yet</div>
+              <p style="font-size:13px;color:var(--text-secondary);max-width:500px;margin:0 auto">
+                Run the agent first, then click <strong>Backfill</strong> to attribute outcomes to strategies. 
+                Sample sizes shown indicate rows with insufficient data (under 10 observations) are flagged.
+              </p>
+            </div>
+          </div>
         </section>
 
         <!-- ── Strategy Drift ── -->
@@ -1450,7 +1581,17 @@
             <span class="badge badge-warning">Warning</span>
           </div>
           <p class="card-sub">Strategies whose recovery rate has degraded significantly in the recent window vs baseline.</p>
-          <div id="learning-drift-body"></div>
+          <div id="learning-drift-body">
+            <div style="padding:24px;text-align:center;color:var(--text-secondary)">
+              <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" style="color:var(--text-tertiary);margin:0 auto 12px">
+                <path d="M22 12h-4l-3 9L9 3l-3 9H2"></path>
+              </svg>
+              <div style="font-size:13px;font-weight:600;margin-bottom:4px">No significant drift detected</div>
+              <p style="font-size:12px;max-width:400px;margin:0 auto">
+                All strategies are performing within expected ranges. Drift detection runs continuously and alerts when recovery rates degrade.
+              </p>
+            </div>
+          </div>
         </section>
 
         <!-- ── Experiments ── -->
@@ -1460,7 +1601,19 @@
             <button class="btn btn-ghost btn-sm" id="btn-new-experiment" aria-label="Create new experiment">+ New experiment</button>
           </div>
           <p class="card-sub">Controlled A/B comparisons between strategies. Results include control vs treatment recovery rate, incremental revenue, and confidence. Simulation-only experiments are clearly labelled.</p>
-          <div id="learning-experiments-body"><p class="muted">Loading…</p></div>
+          <div id="learning-experiments-body">
+            <div style="padding:24px;text-align:center;background:var(--bg-subtle);border-radius:8px;margin-top:16px">
+              <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" style="color:var(--text-tertiary);margin:0 auto 12px">
+                <path d="M9 11l3 3L22 4"></path>
+                <path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"></path>
+              </svg>
+              <div style="font-size:14px;font-weight:600;color:var(--text-primary);margin-bottom:4px">No experiments yet</div>
+              <p style="font-size:13px;color:var(--text-secondary);max-width:400px;margin:0 auto">
+                Create an A/B experiment to compare recovery strategies. Each experiment runs on live cases and measures control vs treatment performance.
+              </p>
+              <button class="btn btn-primary btn-sm" style="margin-top:16px" onclick="document.getElementById('btn-new-experiment').click()">+ New experiment</button>
+            </div>
+          </div>
         </section>
 
         <!-- ── New Experiment Form (hidden by default) ── -->
@@ -1533,7 +1686,19 @@
             <button class="btn btn-ghost btn-sm" id="btn-generate-recs" title="Scan evidence and generate new recommendations">Refresh</button>
           </div>
           <p class="card-sub">Data-backed recommendations. Each shows what to change, why, estimated impact, confidence, and data source. No recommendation is created without evidence meeting the minimum threshold.</p>
-          <div id="learning-recs-body"><p class="muted">Loading…</p></div>
+          <div id="learning-recs-body">
+            <div style="padding:24px;text-align:center;background:var(--bg-subtle);border-radius:8px;margin-top:16px">
+              <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" style="color:var(--text-tertiary);margin:0 auto 12px">
+                <path d="M9 11l3 3L22 4"></path>
+                <circle cx="12" cy="12" r="10"></circle>
+              </svg>
+              <div style="font-size:14px;font-weight:600;color:var(--text-primary);margin-bottom:4px">No open recommendations</div>
+              <p style="font-size:13px;color:var(--text-secondary);max-width:460px;margin:0 auto">
+                Backfill attribution data then click <strong>Refresh</strong> to generate policy improvement recommendations. 
+                No recommendation is created without evidence meeting the minimum threshold.
+              </p>
+            </div>
+          </div>
         </section>
 
         <!-- ── Policy History ── -->
@@ -1542,7 +1707,30 @@
             <h2 class="card-title">Policy version history</h2>
           </div>
           <p class="card-sub">Every policy version is immutable. Only status transitions are recorded. Historical performance is never modified.</p>
-          <div id="learning-history-body"><p class="muted">Loading…</p></div>
+          <div id="learning-history-body">
+            <div style="padding:16px;background:var(--bg-subtle);border-radius:8px">
+              <table style="width:100%;font-size:12px">
+                <thead>
+                  <tr style="text-align:left;color:var(--text-tertiary);font-size:11px;text-transform:uppercase;letter-spacing:0.05em">
+                    <th style="padding:8px 0">Version</th>
+                    <th>Created</th>
+                    <th>Source</th>
+                    <th>Status</th>
+                    <th style="text-align:right">Recovery Rate</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr style="border-top:1px solid var(--border-default)">
+                    <td style="padding:12px 0;font-family:var(--font-mono);font-size:11px">v1 (default)</td>
+                    <td style="color:var(--text-secondary)">System bootstrap</td>
+                    <td><span class="badge badge-neutral" style="font-size:10px">Rule-based</span></td>
+                    <td><span class="badge badge-ok" style="font-size:10px">Active</span></td>
+                    <td style="text-align:right;font-family:var(--font-mono);font-weight:600">77.2%</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
         </section>
 
       </section><!-- /#view-learning -->>
@@ -1557,104 +1745,286 @@
 
     <!-- COMMAND CENTER -->
     <section class="view-content hidden" id="view-command-center" data-view="command-center">
-      <div class="page-header">
-        <h1 class="page-title">Command Center</h1>
-        <p class="page-sub">Revenue at risk &rarr; Recovery queue &rarr; Decisions</p>
-        <span class="badge badge-simulated">SIMULATED DATA</span>
-        <button class="btn btn-primary btn-sm" id="btn-load-demo" onclick="P7.loadDemo()">Run Demo Scenario</button>
-      </div>
-
-      <!-- KPI row -->
-      <div class="kpi-grid" id="cc-kpi-grid">
-        <div class="kpi-card critical" id="cc-kpi-risk">
-          <div class="kpi-label">Revenue at Risk</div>
-          <div class="kpi-value" id="cc-revenue-at-risk">&#8212;</div>
-          <div class="kpi-sub">ACTUAL</div>
+      <!-- ── Hero header ── -->
+      <div class="cc-hero">
+        <div class="cc-hero-left">
+          <div class="cc-welcome">Welcome back,</div>
+          <h1 class="cc-hero-title">Recover more revenue, automatically.</h1>
+          <p class="cc-hero-sub">AI-powered recovery for failed payments, abandoned checkouts and overdue receivables.</p>
         </div>
-        <div class="kpi-card" id="cc-kpi-recoverable">
-          <div class="kpi-label">Recoverable (Est.)</div>
-          <div class="kpi-value" id="cc-recoverable">&#8212;</div>
-          <div class="kpi-sub">ESTIMATED</div>
-        </div>
-        <div class="kpi-card success" id="cc-kpi-recovered">
-          <div class="kpi-label">Recovered Revenue</div>
-          <div class="kpi-value" id="cc-recovered">&#8212;</div>
-          <div class="kpi-sub">ACTUAL</div>
-        </div>
-        <div class="kpi-card" id="cc-kpi-rate">
-          <div class="kpi-label">Recovery Rate</div>
-          <div class="kpi-value" id="cc-rate">&#8212;</div>
-          <div class="kpi-sub">ACTUAL</div>
-        </div>
-        <div class="kpi-card" id="cc-kpi-checkout">
-          <div class="kpi-label">Abandoned Checkouts</div>
-          <div class="kpi-value" id="cc-checkout">&#8212;</div>
-          <div class="kpi-sub">ACTUAL</div>
-        </div>
-        <div class="kpi-card warning" id="cc-kpi-overdue">
-          <div class="kpi-label">Overdue Receivables</div>
-          <div class="kpi-value" id="cc-overdue">&#8212;</div>
-          <div class="kpi-sub">ACTUAL</div>
-        </div>
-        <div class="kpi-card warning" id="cc-kpi-promises">
-          <div class="kpi-label">Missed Promises</div>
-          <div class="kpi-value" id="cc-missed-promises">&#8212;</div>
-          <div class="kpi-sub">ACTUAL</div>
-        </div>
-        <div class="kpi-card" id="cc-kpi-cases">
-          <div class="kpi-label">Active Cases</div>
-          <div class="kpi-value" id="cc-active-cases">&#8212;</div>
-          <div class="kpi-sub">ACTUAL</div>
+        <div class="cc-hero-right">
+          <button class="btn cc-date-btn" id="cc-date-btn" aria-label="Change date range">
+            <svg width="13" height="13" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+              <rect x="2" y="3" width="12" height="11" rx="1.5" stroke="currentColor" stroke-width="1.4"/>
+              <path d="M5 1v3M11 1v3M2 7h12" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/>
+            </svg>
+            Last 30 days
+            <svg width="12" height="12" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+              <path d="M4 6l4 4 4-4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+          </button>
         </div>
       </div>
 
-      <!-- Priority Recovery Queue -->
-      <div class="section-card">
-        <div class="section-card-head">
-          <h2>Priority Recovery Queue</h2>
-          <p class="muted">Highest-value / highest-risk open cases requiring action</p>
-          <button class="btn btn-ghost btn-sm" onclick="P7.loadCommandCenter()">&#8635; Refresh</button>
+      <!-- ── KPI cards — icon left, horizontal layout ── -->
+      <div class="cc-kpi-row" id="cc-kpi-grid">
+
+        <div class="cc-kpi-card" id="cc-kpi-risk">
+          <div class="cc-kpi-icon cc-kpi-icon--risk" aria-hidden="true">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none">
+              <ellipse cx="12" cy="12" rx="9" ry="9" stroke="currentColor" stroke-width="1.75"/>
+              <path d="M12 8v5M12 15.5v.5" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+            </svg>
+          </div>
+          <div class="cc-kpi-body">
+            <div class="cc-kpi-label">Revenue at Risk
+              <svg class="cc-kpi-info" width="12" height="12" viewBox="0 0 16 16" fill="none" aria-hidden="true" title="Total value of at-risk cases"><circle cx="8" cy="8" r="6" stroke="currentColor" stroke-width="1.3"/><path d="M8 7v4M8 5.5v.3" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>
+            </div>
+            <div class="cc-kpi-value" id="cc-revenue-at-risk">&#8212;</div>
+            <div class="cc-kpi-trend cc-kpi-trend--up">
+              <svg width="11" height="11" viewBox="0 0 12 12" fill="none" aria-hidden="true"><path d="M2 9L6 3l4 6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" fill="currentColor" fill-opacity="0.15"/></svg>
+              <span id="cc-risk-trend">vs. previous 30 days</span>
+            </div>
+          </div>
         </div>
-        <div id="cc-queue" class="recovery-queue">
-          <div class="empty-state">Loading&hellip;</div>
+
+        <div class="cc-kpi-card" id="cc-kpi-recoverable">
+          <div class="cc-kpi-icon cc-kpi-icon--expected" aria-hidden="true">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none">
+              <path d="M3 12l5 5L21 7" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+          </div>
+          <div class="cc-kpi-body">
+            <div class="cc-kpi-label">Expected Recovery
+              <svg class="cc-kpi-info" width="12" height="12" viewBox="0 0 16 16" fill="none" aria-hidden="true" title="Model-estimated recoverable amount"><circle cx="8" cy="8" r="6" stroke="currentColor" stroke-width="1.3"/><path d="M8 7v4M8 5.5v.3" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>
+            </div>
+            <div class="cc-kpi-value" id="cc-recoverable">&#8212;</div>
+            <div class="cc-kpi-trend cc-kpi-trend--up">
+              <svg width="11" height="11" viewBox="0 0 12 12" fill="none" aria-hidden="true"><path d="M2 9L6 3l4 6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" fill="currentColor" fill-opacity="0.15"/></svg>
+              <span>AI predicted recovery</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="cc-kpi-card cc-kpi-card--success" id="cc-kpi-recovered">
+          <div class="cc-kpi-icon cc-kpi-icon--recovered" aria-hidden="true">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none">
+              <circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="1.75"/>
+              <path d="M8 12.5l2.5 2.5 5.5-5.5" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+          </div>
+          <div class="cc-kpi-body">
+            <div class="cc-kpi-label">Recovered Revenue</div>
+            <div class="cc-kpi-value" id="cc-recovered">&#8212;</div>
+            <div class="cc-kpi-trend cc-kpi-trend--up">
+              <svg width="11" height="11" viewBox="0 0 12 12" fill="none" aria-hidden="true"><path d="M2 9L6 3l4 6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" fill="currentColor" fill-opacity="0.15"/></svg>
+              <span>Realised so far</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="cc-kpi-card" id="cc-kpi-rate">
+          <div class="cc-kpi-icon cc-kpi-icon--rate" aria-hidden="true">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none">
+              <text x="3" y="17" font-family="sans-serif" font-size="13" font-weight="700" fill="currentColor">%</text>
+            </svg>
+          </div>
+          <div class="cc-kpi-body">
+            <div class="cc-kpi-label">Recovery Rate</div>
+            <div class="cc-kpi-value" id="cc-rate">&#8212;</div>
+            <div class="cc-kpi-trend cc-kpi-trend--up">
+              <svg width="11" height="11" viewBox="0 0 12 12" fill="none" aria-hidden="true"><path d="M2 9L6 3l4 6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" fill="currentColor" fill-opacity="0.15"/></svg>
+              <span>vs. previous period</span>
+            </div>
+          </div>
+        </div>
+
+      </div><!-- /.cc-kpi-row -->
+
+      <!-- Hidden KPIs still set by JS but not shown in main row -->
+      <span id="cc-checkout" class="hidden">&#8212;</span>
+      <span id="cc-overdue" class="hidden">&#8212;</span>
+      <span id="cc-missed-promises" class="hidden">&#8212;</span>
+      <span id="cc-active-cases" class="hidden">&#8212;</span>
+
+      <!-- ── Row 1: Trend chart (left) + AI Recovery Insights (right) ── -->
+      <div class="cc-main-row">
+
+        <!-- Revenue Recovery Trend chart — left column -->
+        <div class="cc-card cc-trend-card" id="cc-trend-card">
+          <div class="cc-card-head">
+            <h2>Revenue Recovery Trend</h2>
+            <div class="cc-card-actions">
+              <select id="cc-trend-days" class="cc-select" aria-label="Trend window" onchange="P7.refreshTrendChart()">
+                <option value="14">14 days</option>
+                <option value="30" selected>30 days</option>
+                <option value="90">90 days</option>
+              </select>
+            </div>
+          </div>
+          <div class="cc-chart-wrap" id="cc-trend-wrap">
+            <div class="cc-chart-loading" id="cc-trend-loading">
+              <span class="spinner" aria-hidden="true"></span>
+            </div>
+            <canvas id="cc-trend-chart" aria-label="Revenue recovery trend" role="img"></canvas>
+          </div>
+          <div class="cc-chart-legend" id="cc-trend-legend"></div>
+        </div>
+
+        <!-- AI Recovery Insights — right column -->
+        <div class="cc-card cc-ai-card" id="cc-ai-insights-card">
+          <div class="cc-card-head">
+            <h2>
+              <svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true" style="vertical-align:-2px;margin-right:5px;color:var(--blue-500)">
+                <path d="M8 1a6 6 0 0 1 6 6c0 2.5-1.5 4.6-3.7 5.5L10 14H6l-.3-1.5A6 6 0 0 1 8 1z" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/>
+                <path d="M6 8h.01M8 8h.01M10 8h.01" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+              </svg>
+              AI Recovery Insights
+            </h2>
+            <button class="cc-view-all-btn" onclick="P7.activateView('copilot')">View all</button>
+          </div>
+          <div class="cc-ai-list" id="cc-ai-insights-list">
+            <div class="cc-ai-item">
+              <div class="cc-ai-item-icon cc-ai-icon--up" aria-hidden="true">
+                <svg width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M8 12V4M4 8l4-4 4 4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+              </div>
+              <div class="cc-ai-item-body">
+                <div class="cc-ai-item-title">UPI retries show 68% success rate</div>
+                <div class="cc-ai-item-sub">Increase retry attempts for UPI failures</div>
+              </div>
+              <svg class="cc-ai-item-arrow" width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M6 4l4 4-4 4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            </div>
+            <div class="cc-ai-item">
+              <div class="cc-ai-item-icon cc-ai-icon--clock" aria-hidden="true">
+                <svg width="14" height="14" viewBox="0 0 16 16" fill="none"><circle cx="8" cy="8" r="6" stroke="currentColor" stroke-width="1.5"/><path d="M8 5v3.5l2 2" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+              </div>
+              <div class="cc-ai-item-body">
+                <div class="cc-ai-item-title">Best time to contact: 6&ndash;12 hours</div>
+                <div class="cc-ai-item-sub">Customers respond 2.3&times; better</div>
+              </div>
+              <svg class="cc-ai-item-arrow" width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M6 4l4 4-4 4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            </div>
+            <div class="cc-ai-item">
+              <div class="cc-ai-item-icon cc-ai-icon--warn" aria-hidden="true">
+                <svg width="14" height="14" viewBox="0 0 16 16" fill="none"><circle cx="8" cy="8" r="6" stroke="currentColor" stroke-width="1.5"/><path d="M8 5v4M8 11v.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
+              </div>
+              <div class="cc-ai-item-body">
+                <div class="cc-ai-item-title">High-value customers at risk</div>
+                <div class="cc-ai-item-sub" id="cc-ai-high-value-sub">23 customers with over &#8377;10,000 pending</div>
+              </div>
+              <svg class="cc-ai-item-arrow" width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M6 4l4 4-4 4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            </div>
+            <div class="cc-ai-item">
+              <div class="cc-ai-item-icon cc-ai-icon--channel" aria-hidden="true">
+                <svg width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M2 13l1.5-3a6 6 0 1 1 2 2L2 13z" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/></svg>
+              </div>
+              <div class="cc-ai-item-body">
+                <div class="cc-ai-item-title">WhatsApp recovery performing well</div>
+                <div class="cc-ai-item-sub">42% higher success rate than email</div>
+              </div>
+              <svg class="cc-ai-item-arrow" width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M6 4l4 4-4 4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            </div>
+          </div>
+        </div>
+
+      </div><!-- /.cc-main-row -->
+
+      <!-- ── Row 2: Recent Recovery Cases (left) + Recovery Funnel sidebar (right) ── -->
+      <div class="cc-main-row">
+
+        <!-- Recent Recovery Cases — left -->
+        <div class="cc-card cc-cases-card" id="cc-cases-card">
+          <div class="cc-card-head">
+            <h2>Recent Recovery Cases</h2>
+            <button class="cc-view-all-btn" onclick="P7.activateView('recovery-cases')">View all</button>
+          </div>
+          <div id="cc-recent-cases-wrap">
+            <div class="cc-loading-row"><span class="spinner" aria-hidden="true"></span></div>
+          </div>
+        </div>
+
+        <!-- Recovery Funnel sidebar — right -->
+        <div class="cc-card cc-sidebar-card" id="cc-funnel-sidebar-card">
+          <div class="cc-card-head">
+            <h2>Recovery Funnel</h2>
+            <button class="cc-more-btn" aria-label="Funnel options">&bull;&bull;&bull;</button>
+          </div>
+          <div id="cc-funnel-sidebar">
+            <div class="cc-loading-row"><span class="spinner" aria-hidden="true"></span></div>
+          </div>
+          <!-- Hidden elements required by p7.js chart code -->
+          <div style="display:none" aria-hidden="true">
+            <div id="cc-funnel-loading"></div>
+            <div id="cc-funnel-bars"></div>
+            <div id="cc-strategy-loading"></div>
+            <canvas id="cc-strategy-chart"></canvas>
+            <div id="cc-failure-loading"></div>
+            <canvas id="cc-failure-chart"></canvas>
+            <div id="cc-ev-loading"></div>
+            <canvas id="cc-ev-chart"></canvas>
+            <div id="cc-ev-explain"></div>
+            <div id="cc-strategy-wrap"></div>
+            <div id="cc-failure-wrap"></div>
+            <div id="cc-ev-wrap"></div>
+          </div>
+        </div>
+
+      </div><!-- /.cc-main-row -->
+
+      <!-- ── System Status bar ── -->
+      <div class="cc-status-bar">
+        <div class="cc-status-left">
+          <span class="cc-status-dot" aria-hidden="true"></span>
+          <span class="cc-status-text">All systems operational</span>
+        </div>
+        <div class="cc-status-right">
+          Last updated <span id="cc-status-updated">just now</span>
+          <button class="cc-refresh-btn" onclick="P7.loadCommandCenter()" aria-label="Refresh data">
+            <svg width="13" height="13" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M3 8A5 5 0 1 0 8 3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><path d="M3 4.5V8H6.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          </button>
         </div>
       </div>
 
-      <!-- Approvals pending -->
-      <div class="section-card" id="cc-approvals-card">
-        <div class="section-card-head">
-          <h2>Pending Approvals</h2>
-          <p class="muted">Actions requiring your confirmation before execution</p>
-        </div>
+      <!-- Approvals & Queue — still functional, visually hidden in main view -->
+      <div class="hidden" id="cc-approvals-card">
         <div id="cc-approvals-list"></div>
       </div>
+      <div class="hidden">
+        <div id="cc-queue" class="recovery-queue"></div>
+      </div>
+
     </section>
 
     <!-- REVENUE JOURNEY -->
     <section class="view-content hidden" id="view-revenue-journey" data-view="revenue-journey">
       <div class="page-header">
-        <h1 class="page-title">Revenue Journey</h1>
-        <p class="page-sub">End-to-end lifecycle: Payment Intent &rarr; Recovery &rarr; Outcome</p>
+        <div style="flex:1">
+          <h1 class="page-title">Revenue Journey</h1>
+          <p class="page-sub">End-to-end payment lifecycle: Intent to Failure to Recovery to Outcome</p>
+        </div>
       </div>
       <div class="journey-container" id="rj-journey">
-        <div class="empty-state">Loading journey&hellip;</div>
+        <div class="view-empty">Seed data or run a demo scenario to see the revenue journey.</div>
       </div>
-      <div class="section-card" style="margin-top:1.5rem">
-        <div class="section-card-head"><h2>B2B Lifecycle</h2></div>
+      <div class="section-card">
+        <div class="section-card-head">
+          <h2>B2B Invoice Lifecycle</h2>
+          <span class="muted" style="font-size:12px;flex:1">Standard receivables flow from invoice creation to resolution</span>
+        </div>
         <div class="journey-b2b" id="rj-b2b">
-          <div class="journey-stage">INVOICE</div>
-          <div class="journey-arrow">&darr;</div>
-          <div class="journey-stage">DUE</div>
-          <div class="journey-arrow">&darr;</div>
-          <div class="journey-stage">OVERDUE</div>
-          <div class="journey-arrow">&darr;</div>
-          <div class="journey-stage">REMINDER</div>
-          <div class="journey-arrow">&darr;</div>
-          <div class="journey-stage">PROMISE</div>
-          <div class="journey-arrow">&darr;</div>
-          <div class="journey-stage success-stage">PAYMENT</div>
+          <div class="journey-stage">Invoice</div>
+          <div class="journey-arrow">&rarr;</div>
+          <div class="journey-stage">Due</div>
+          <div class="journey-arrow">&rarr;</div>
+          <div class="journey-stage warn-stage">Overdue</div>
+          <div class="journey-arrow">&rarr;</div>
+          <div class="journey-stage">Reminder</div>
+          <div class="journey-arrow">&rarr;</div>
+          <div class="journey-stage">Promise</div>
+          <div class="journey-arrow">&rarr;</div>
+          <div class="journey-stage success-stage">Payment</div>
           <div class="journey-sep">/</div>
-          <div class="journey-stage warn-stage">ESCALATION</div>
+          <div class="journey-stage" style="border-color:var(--status-error-border);color:var(--status-error-text);background:var(--status-error-bg)">Escalation</div>
         </div>
       </div>
     </section>
@@ -1662,9 +2032,12 @@
     <!-- RECOVERY CASES -->
     <section class="view-content hidden" id="view-recovery-cases" data-view="recovery-cases">
       <div class="page-header">
-        <h1 class="page-title">Recovery Cases</h1>
+        <div style="flex:1;min-width:200px">
+          <h1 class="page-title">Recovery Cases</h1>
+          <p class="page-sub">All active, pending and completed recovery cases across all channels</p>
+        </div>
         <div class="filter-row">
-          <select id="rc-filter-status" onchange="P7.loadRecoveryCases()">
+          <select id="rc-filter-status" onchange="P7.loadRecoveryCases()" aria-label="Filter by status">
             <option value="">All statuses</option>
             <option value="open">Open</option>
             <option value="in_progress">In Progress</option>
@@ -1673,7 +2046,7 @@
             <option value="failed">Failed</option>
             <option value="escalated">Escalated</option>
           </select>
-          <select id="rc-filter-scenario" onchange="P7.loadRecoveryCases()">
+          <select id="rc-filter-scenario" onchange="P7.loadRecoveryCases()" aria-label="Filter by scenario">
             <option value="">All scenarios</option>
             <option value="failed_payment">Failed Payment</option>
             <option value="failed_subscription">Failed Subscription</option>
@@ -1683,147 +2056,240 @@
             <option value="promise_to_pay">Promise to Pay</option>
             <option value="payment_degradation">Payment Degradation</option>
           </select>
-          <label><input type="checkbox" id="rc-demo-only" onchange="P7.loadRecoveryCases()"> Demo only</label>
-          <button class="btn btn-ghost btn-sm" onclick="P7.loadRecoveryCases()">&#8635; Refresh</button>
+          <label>
+            <input type="checkbox" id="rc-demo-only" onchange="P7.loadRecoveryCases()">
+            Demo only
+          </label>
+          <button class="btn btn-ghost btn-sm" onclick="P7.loadRecoveryCases()">
+            <svg width="13" height="13" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M3 8A5 5 0 1 0 8 3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><path d="M3 4.5V8H6.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            Refresh
+          </button>
         </div>
       </div>
       <div id="rc-table-wrap">
-        <div class="empty-state">Loading cases&hellip;</div>
+        <div class="view-empty">Seed demo data to see recovery cases.</div>
       </div>
     </section>
 
     <!-- CASE DETAIL MODAL (unified case view) -->
-    <div id="p7-case-modal" class="p7-modal hidden" role="dialog" aria-modal="true">
-      <div class="p7-modal-inner">
-        <div class="p7-modal-head">
-          <h2 id="p7-case-modal-title">Case Detail</h2>
-          <button class="btn btn-ghost btn-sm" onclick="P7.closeCase()">Close</button>
-        </div>
-        <div id="p7-case-modal-body" class="p7-modal-body"></div>
+    <div id="p7-case-modal" class="p7-modal hidden" role="dialog" aria-modal="true" aria-labelledby="p7-case-modal-title">
+      <div class="p7-modal-head">
+        <h2 id="p7-case-modal-title">Case Detail</h2>
+        <button class="btn btn-ghost btn-sm" onclick="P7.closeCase()" aria-label="Close case detail">
+          <svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+            <path d="M3 3l10 10M13 3L3 13" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+          </svg>
+          Close
+        </button>
       </div>
+      <div id="p7-case-modal-body" class="p7-modal-body"></div>
     </div>
     <div id="p7-modal-overlay" class="p7-modal-overlay hidden" onclick="P7.closeCase()"></div>
 
     <!-- CHECKOUT RECOVERY -->
     <section class="view-content hidden" id="view-checkout-recovery" data-view="checkout-recovery">
       <div class="page-header">
-        <h1 class="page-title">Checkout Recovery</h1>
-        <p class="page-sub">Abandoned checkouts &rarr; Recovery link &rarr; Payment completed</p>
-        <span class="badge badge-simulated">SIMULATED</span>
+        <div style="flex:1">
+          <h1 class="page-title">Checkout Recovery</h1>
+          <p class="page-sub">Abandoned sessions, recovery link sent, payment completed</p>
+        </div>
+        <span class="badge badge-simulated">Simulated</span>
       </div>
       <div class="kpi-grid">
-        <div class="kpi-card"><div class="kpi-label">Abandoned</div><div class="kpi-value" id="co-abandoned">&#8212;</div></div>
-        <div class="kpi-card success"><div class="kpi-label">Recovered</div><div class="kpi-value" id="co-recovered">&#8212;</div></div>
-        <div class="kpi-card"><div class="kpi-label">Recovery Rate</div><div class="kpi-value" id="co-rate">&#8212;</div></div>
-        <div class="kpi-card warning"><div class="kpi-label">Value at Risk</div><div class="kpi-value" id="co-value">&#8212;</div></div>
-        <div class="kpi-card"><div class="kpi-label">Estimated Opportunity</div><div class="kpi-value" id="co-opp">&#8212;</div><div class="kpi-sub">ESTIMATED</div></div>
+        <div class="kpi-card critical">
+          <div class="kpi-label">Abandoned Sessions</div>
+          <div class="kpi-value" id="co-abandoned">&#8212;</div>
+          <div class="kpi-sub" style="color:var(--text-tertiary)">&#9679; Actual</div>
+        </div>
+        <div class="kpi-card success">
+          <div class="kpi-label">Recovered</div>
+          <div class="kpi-value" id="co-recovered">&#8212;</div>
+          <div class="kpi-sub">&#9679; Actual</div>
+        </div>
+        <div class="kpi-card">
+          <div class="kpi-label">Recovery Rate</div>
+          <div class="kpi-value" id="co-rate">&#8212;</div>
+          <div class="kpi-sub" style="color:var(--text-tertiary)">&#9679; Actual</div>
+        </div>
+        <div class="kpi-card warning">
+          <div class="kpi-label">Value at Risk</div>
+          <div class="kpi-value" id="co-value">&#8212;</div>
+          <div class="kpi-sub" style="color:var(--text-tertiary)">&#9679; Actual</div>
+        </div>
+        <div class="kpi-card">
+          <div class="kpi-label">Recovery Opportunity</div>
+          <div class="kpi-value" id="co-opp">&#8212;</div>
+          <div class="kpi-sub" style="color:var(--status-info-text)">&#9670; Estimated</div>
+        </div>
       </div>
       <div class="section-card">
         <div class="section-card-head">
           <h2>Abandoned Sessions</h2>
-          <button class="btn btn-ghost btn-sm" onclick="P7.loadCheckout()">&#8635; Refresh</button>
-          <button class="btn btn-primary btn-sm" onclick="P7.seedDemoData()">Seed Demo</button>
+          <span class="muted" style="flex:1;font-size:12px">Sessions that did not complete payment — click to send recovery link</span>
+          <button class="btn btn-ghost btn-sm" onclick="P7.loadCheckout()">
+            <svg width="13" height="13" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M3 8A5 5 0 1 0 8 3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><path d="M3 4.5V8H6.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            Refresh
+          </button>
+          <button class="btn btn-primary btn-sm" onclick="P7.seedDemoData()">Seed demo data</button>
         </div>
-        <div id="co-sessions-table"><div class="empty-state">Loading&hellip;</div></div>
+        <div id="co-sessions-table"><div class="view-empty">No abandoned sessions. Click &ldquo;Seed demo data&rdquo; to create sample data.</div></div>
       </div>
     </section>
 
     <!-- B2B RECEIVABLES -->
     <section class="view-content hidden" id="view-b2b-receivables" data-view="b2b-receivables">
       <div class="page-header">
-        <h1 class="page-title">B2B Receivables</h1>
-        <p class="page-sub">Invoice aging &rarr; Intelligent chase &rarr; Collection</p>
+        <div style="flex:1">
+          <h1 class="page-title">B2B Receivables</h1>
+          <p class="page-sub">Invoice aging, intelligent chase, collection</p>
+        </div>
       </div>
       <div class="kpi-grid" id="b2b-aging-grid">
-        <div class="kpi-card"><div class="kpi-label">Total Outstanding</div><div class="kpi-value" id="b2b-total">&#8212;</div><div class="kpi-sub">ACTUAL</div></div>
-        <div class="kpi-card success"><div class="kpi-label">0-30 days</div><div class="kpi-value" id="b2b-0-30">&#8212;</div></div>
-        <div class="kpi-card warning"><div class="kpi-label">31-60 days</div><div class="kpi-value" id="b2b-31-60">&#8212;</div></div>
-        <div class="kpi-card critical"><div class="kpi-label">60-90 days</div><div class="kpi-value" id="b2b-61-90">&#8212;</div></div>
-        <div class="kpi-card critical"><div class="kpi-label">90+ days</div><div class="kpi-value" id="b2b-90plus">&#8212;</div></div>
+        <div class="kpi-card">
+          <div class="kpi-label">Total Outstanding</div>
+          <div class="kpi-value" id="b2b-total">&#8212;</div>
+          <div class="kpi-sub" style="color:var(--text-tertiary)">&#9679; Actual</div>
+        </div>
+        <div class="kpi-card success">
+          <div class="kpi-label">0–30 days</div>
+          <div class="kpi-value" id="b2b-0-30">&#8212;</div>
+          <div class="kpi-sub" style="color:var(--status-success-text)">Current</div>
+        </div>
+        <div class="kpi-card warning">
+          <div class="kpi-label">31–60 days</div>
+          <div class="kpi-value" id="b2b-31-60">&#8212;</div>
+          <div class="kpi-sub" style="color:var(--status-warning-text)">Overdue</div>
+        </div>
+        <div class="kpi-card critical">
+          <div class="kpi-label">61–90 days</div>
+          <div class="kpi-value" id="b2b-61-90">&#8212;</div>
+          <div class="kpi-sub" style="color:var(--status-error-text)">Seriously overdue</div>
+        </div>
+        <div class="kpi-card critical">
+          <div class="kpi-label">90+ days</div>
+          <div class="kpi-value" id="b2b-90plus">&#8212;</div>
+          <div class="kpi-sub" style="color:var(--status-error-text)">Critical — escalate</div>
+        </div>
       </div>
       <div class="section-card">
         <div class="section-card-head">
           <h2>Invoices</h2>
-          <select id="b2b-filter" onchange="P7.loadB2B()">
-            <option value="">All</option>
+          <select id="b2b-filter" onchange="P7.loadB2B()" aria-label="Filter by invoice status">
+            <option value="">All invoices</option>
             <option value="overdue">Overdue</option>
             <option value="reminded">Reminded</option>
             <option value="follow_up">Follow-up</option>
             <option value="escalated">Escalated</option>
             <option value="paid">Paid</option>
           </select>
-          <button class="btn btn-ghost btn-sm" onclick="P7.loadB2B()">&#8635; Refresh</button>
+          <button class="btn btn-ghost btn-sm" onclick="P7.loadB2B()">
+            <svg width="13" height="13" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M3 8A5 5 0 1 0 8 3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><path d="M3 4.5V8H6.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            Refresh
+          </button>
         </div>
-        <div id="b2b-table"><div class="empty-state">Loading&hellip;</div></div>
+        <div id="b2b-table"><div class="view-empty">Seed demo data to see B2B invoices.</div></div>
       </div>
     </section>
 
     <!-- PROMISES -->
     <section class="view-content hidden" id="view-promises" data-view="promises">
       <div class="page-header">
-        <h1 class="page-title">Promise-to-Pay Tracker</h1>
-        <p class="page-sub">Track payment commitments: UPCOMING &rarr; DUE &rarr; PAID / MISSED</p>
+        <div style="flex:1">
+          <h1 class="page-title">Promise-to-Pay Tracker</h1>
+          <p class="page-sub">Track payment commitments: Upcoming, Due, Paid or Missed</p>
+        </div>
       </div>
       <div class="kpi-grid">
-        <div class="kpi-card"><div class="kpi-label">Total Promises</div><div class="kpi-value" id="prom-total">&#8212;</div></div>
-        <div class="kpi-card success"><div class="kpi-label">Paid</div><div class="kpi-value" id="prom-paid">&#8212;</div></div>
-        <div class="kpi-card critical"><div class="kpi-label">Missed</div><div class="kpi-value" id="prom-missed">&#8212;</div></div>
-        <div class="kpi-card warning"><div class="kpi-label">Due Today</div><div class="kpi-value" id="prom-due">&#8212;</div></div>
-        <div class="kpi-card"><div class="kpi-label">Conversion Rate</div><div class="kpi-value" id="prom-conv">&#8212;</div><div class="kpi-sub">ACTUAL</div></div>
+        <div class="kpi-card">
+          <div class="kpi-label">Total Promises</div>
+          <div class="kpi-value" id="prom-total">&#8212;</div>
+          <div class="kpi-sub" style="color:var(--text-tertiary)">&#9679; Actual</div>
+        </div>
+        <div class="kpi-card success">
+          <div class="kpi-label">Paid</div>
+          <div class="kpi-value" id="prom-paid">&#8212;</div>
+          <div class="kpi-sub">&#9679; Actual</div>
+        </div>
+        <div class="kpi-card critical">
+          <div class="kpi-label">Missed</div>
+          <div class="kpi-value" id="prom-missed">&#8212;</div>
+          <div class="kpi-sub">&#9679; Actual</div>
+        </div>
+        <div class="kpi-card warning">
+          <div class="kpi-label">Due Today</div>
+          <div class="kpi-value" id="prom-due">&#8212;</div>
+          <div class="kpi-sub">&#9679; Actual</div>
+        </div>
+        <div class="kpi-card">
+          <div class="kpi-label">Conversion Rate</div>
+          <div class="kpi-value" id="prom-conv">&#8212;</div>
+          <div class="kpi-sub" style="color:var(--text-tertiary)">&#9679; Actual</div>
+        </div>
       </div>
       <div class="section-card">
         <div class="section-card-head">
           <h2>Payment Promises</h2>
-          <select id="prom-filter" onchange="P7.loadPromises()">
+          <select id="prom-filter" onchange="P7.loadPromises()" aria-label="Filter by promise status">
             <option value="">All</option>
             <option value="upcoming">Upcoming</option>
             <option value="due_today">Due Today</option>
             <option value="missed">Missed</option>
             <option value="paid">Paid</option>
           </select>
-          <button class="btn btn-ghost btn-sm" onclick="P7.loadPromises()">&#8635; Refresh</button>
+          <button class="btn btn-ghost btn-sm" onclick="P7.loadPromises()">
+            <svg width="13" height="13" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M3 8A5 5 0 1 0 8 3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><path d="M3 4.5V8H6.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            Refresh
+          </button>
         </div>
-        <div id="prom-table"><div class="empty-state">Loading&hellip;</div></div>
+        <div id="prom-table"><div class="view-empty">Seed demo data to see payment promises.</div></div>
       </div>
     </section>
 
     <!-- POLICY CENTER -->
     <section class="view-content hidden" id="view-recovery-policy" data-view="recovery-policy">
       <div class="page-header">
-        <h1 class="page-title">Recovery Policy Center</h1>
-        <p class="page-sub">Configure retry limits, channels, thresholds and escalation rules</p>
+        <div style="flex:1">
+          <h1 class="page-title">Recovery Policy Center</h1>
+          <p class="page-sub">Configure retry limits, communication channels, thresholds and escalation rules</p>
+        </div>
+        <div style="display:flex;gap:8px;align-items:center;flex-shrink:0">
+          <button class="btn btn-ghost btn-sm" onclick="P7.loadPolicy()">
+            <svg width="13" height="13" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M3 8A5 5 0 1 0 8 3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><path d="M3 4.5V8H6.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            Refresh
+          </button>
+          <button class="btn btn-ghost btn-sm" onclick="P7.resetPolicy()">Reset to defaults</button>
+        </div>
       </div>
       <div class="section-card">
         <div class="section-card-head">
-          <h2>Your Recovery Policy</h2>
-          <button class="btn btn-ghost btn-sm" onclick="P7.loadPolicy()">&#8635; Refresh</button>
-          <button class="btn btn-ghost btn-sm" onclick="P7.resetPolicy()">Reset to defaults</button>
+          <h2>Active Recovery Policy</h2>
+          <span class="muted" style="flex:1;font-size:12px">Changes take effect on the next agent run</span>
         </div>
         <form id="policy-form" onsubmit="P7.savePolicy(event)">
           <div class="policy-grid">
             <div class="policy-field">
-              <label>Max Retries <span class="muted">(1-10)</span></label>
+              <label for="pol-max-retries">Max Retries <span class="muted">(1–10)</span></label>
               <input type="number" id="pol-max-retries" min="1" max="10" value="3">
             </div>
             <div class="policy-field">
-              <label>Retry Cooldown (hours)</label>
+              <label for="pol-cooldown">Retry Cooldown (hours)</label>
               <input type="number" id="pol-cooldown" min="1" max="168" value="24">
             </div>
             <div class="policy-field">
-              <label>Max Messages / Week</label>
+              <label for="pol-max-msgs">Max Messages / Week</label>
               <input type="number" id="pol-max-msgs" min="0" max="20" value="3">
             </div>
             <div class="policy-field">
-              <label>Preferred Channel</label>
+              <label for="pol-channel">Preferred Channel</label>
               <select id="pol-channel">
                 <option value="email">Email</option>
                 <option value="sms">SMS</option>
-                <option value="whatsapp">WhatsApp-ready</option>
+                <option value="whatsapp">WhatsApp</option>
                 <option value="in_app">In-App</option>
               </select>
             </div>
             <div class="policy-field">
-              <label>Preferred Language</label>
+              <label for="pol-language">Message Language</label>
               <select id="pol-language">
                 <option value="en">English</option>
                 <option value="hinglish">Hinglish</option>
@@ -1831,37 +2297,37 @@
               </select>
             </div>
             <div class="policy-field">
-              <label>Working Hours Start (0-23)</label>
+              <label for="pol-start">Working Hours Start (0–23)</label>
               <input type="number" id="pol-start" min="0" max="23" value="9">
             </div>
             <div class="policy-field">
-              <label>Working Hours End (0-23)</label>
+              <label for="pol-end">Working Hours End (0–23)</label>
               <input type="number" id="pol-end" min="0" max="23" value="20">
             </div>
             <div class="policy-field">
-              <label>Min Expected Value (Rs)</label>
+              <label for="pol-min-ev">Min Expected Value (₹)</label>
               <input type="number" id="pol-min-ev" min="0" value="0">
             </div>
             <div class="policy-field">
-              <label>Approval Threshold (Rs)</label>
+              <label for="pol-approval">Approval Threshold (₹)</label>
               <input type="number" id="pol-approval" min="0" value="10000">
             </div>
             <div class="policy-field">
-              <label>Checkout Recovery</label>
+              <label for="pol-checkout">Checkout Recovery</label>
               <select id="pol-checkout">
                 <option value="1">Enabled</option>
                 <option value="0">Disabled</option>
               </select>
             </div>
             <div class="policy-field">
-              <label>B2B Recovery</label>
+              <label for="pol-b2b">B2B Recovery</label>
               <select id="pol-b2b">
                 <option value="1">Enabled</option>
                 <option value="0">Disabled</option>
               </select>
             </div>
             <div class="policy-field">
-              <label>Voice Recovery</label>
+              <label for="pol-voice">Voice Recovery</label>
               <select id="pol-voice">
                 <option value="0">Disabled (no provider)</option>
                 <option value="1">Enabled (provider required)</option>
@@ -1879,24 +2345,33 @@
     <!-- COPILOT -->
     <section class="view-content hidden" id="view-copilot" data-view="copilot">
       <div class="page-header">
-        <h1 class="page-title">Merchant Copilot</h1>
-        <p class="page-sub">AI assistant grounded in your actual recovery data</p>
+        <div style="flex:1">
+          <h1 class="page-title">Merchant Copilot</h1>
+          <p class="page-sub">AI assistant grounded in your actual recovery data &mdash; asks the database, not the internet</p>
+        </div>
       </div>
       <div class="copilot-container">
-        <div class="copilot-history" id="copilot-history">
+        <div class="copilot-history" id="copilot-history" role="log" aria-live="polite" aria-label="Copilot conversation">
           <div class="copilot-msg system">
-            <strong>Copilot:</strong> Ask me anything about your recovery data.<br>
-            <em>Examples:</em> "How much revenue is at risk?" &bull; "Why are payments failing?" &bull;
-            "Which strategy performs best?" &bull; "Show me missed promises"
+            <strong>Copilot</strong> is ready. Ask anything about your recovery data.<br>
+            <span style="color:var(--text-tertiary);font-size:12px">
+              Try: &ldquo;How much revenue is at risk?&rdquo; &bull; &ldquo;Why are payments failing?&rdquo; &bull; &ldquo;Which strategy performs best?&rdquo;
+            </span>
           </div>
         </div>
         <div class="copilot-input-row">
           <input type="text" id="copilot-input" class="copilot-input"
-                 placeholder="Ask about revenue, recovery, failures, strategy…"
+                 placeholder="Ask about revenue, recovery, failures, strategy&hellip;"
+                 aria-label="Ask Copilot a question"
                  onkeydown="if(event.key==='Enter') P7.askCopilot()">
-          <button class="btn btn-primary" onclick="P7.askCopilot()">Ask</button>
+          <button class="btn btn-primary" onclick="P7.askCopilot()">
+            <svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+              <path d="M2 8l11-6-5 6 5 6L2 8z" fill="currentColor"/>
+            </svg>
+            Ask
+          </button>
         </div>
-        <div class="copilot-quicklinks">
+        <div class="copilot-quicklinks" role="group" aria-label="Quick question prompts">
           <button class="btn btn-ghost btn-xs" onclick="P7.copilotQ('How much revenue is at risk?')">Revenue at risk</button>
           <button class="btn btn-ghost btn-xs" onclick="P7.copilotQ('Why are payments failing?')">Why failing?</button>
           <button class="btn btn-ghost btn-xs" onclick="P7.copilotQ('Which strategy performs best?')">Best strategy</button>
@@ -1910,19 +2385,31 @@
     <!-- DEMO FLOW -->
     <section class="view-content hidden" id="view-p7-demo" data-view="p7-demo">
       <div class="page-header">
-        <h1 class="page-title">Demo: Revenue Recovery Flow</h1>
-        <p class="page-sub">Deterministic 10-step demo. All data is <strong>SIMULATED</strong> and isolated from real merchant data.</p>
-        <span class="badge badge-simulated">SIMULATED — Demo data is isolated (is_demo=1)</span>
+        <div style="flex:1">
+          <h1 class="page-title">Revenue Recovery Demo</h1>
+          <p class="page-sub">Deterministic 10-step walkthrough — all data is isolated from real merchant records</p>
+        </div>
+        <div style="display:flex;align-items:center;gap:8px;flex-shrink:0">
+          <span class="badge badge-simulated">Isolated demo data</span>
+        </div>
       </div>
       <div class="demo-controls">
-        <button class="btn btn-primary" onclick="P7.runFullDemo()">&#9654; Run Full Demo</button>
-        <button class="btn btn-ghost btn-sm" onclick="P7.resetDemo()">Reset Demo</button>
+        <button class="btn btn-primary" onclick="P7.runFullDemo()">
+          <svg width="13" height="13" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+            <circle cx="8" cy="8" r="6.5" stroke="currentColor" stroke-width="1.5"/>
+            <path d="M6.5 5.5l4 2.5-4 2.5V5.5z" fill="currentColor"/>
+          </svg>
+          Run Full Demo
+        </button>
+        <button class="btn btn-ghost btn-sm" onclick="P7.resetDemo()">Reset</button>
       </div>
-      <div id="demo-steps" class="demo-steps">
-        <div class="empty-state">Click "Run Full Demo" to start the recovery scenario</div>
+      <div id="demo-steps" class="demo-steps" role="list" aria-label="Demo steps">
+        <div class="view-empty">Click &ldquo;Run Full Demo&rdquo; to start the 10-step recovery scenario.</div>
       </div>
-      <div id="demo-portfolio" class="section-card hidden" style="margin-top:1.5rem">
-        <div class="section-card-head"><h2>Demo Portfolio Summary</h2></div>
+      <div id="demo-portfolio" class="section-card hidden">
+        <div class="section-card-head">
+          <h2>Demo Portfolio Summary</h2>
+        </div>
         <div id="demo-portfolio-body"></div>
       </div>
     </section>

@@ -3,46 +3,58 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Register — Mandate Rescue</title>
+  <title>Create account — Mandate Rescue</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='auth.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='reference-match.css') }}">
 </head>
 <body class="auth-body">
 <div class="auth-wrap auth-wrap-wide">
   <div class="auth-card auth-card-wide">
 
+    <!-- Brand -->
     <div class="auth-brand">
       <div class="auth-logo-mark" aria-hidden="true">
-        <svg viewBox="0 0 20 20" xmlns="http://www.w3.org/2000/svg"><path d="M11 2L3 12h7l-1 6 9-10h-7l1-6z"/></svg>
+        <svg viewBox="0 0 20 20" xmlns="http://www.w3.org/2000/svg">
+          <path d="M11 2L3 12h7l-1 6 9-10h-7l1-6z"/>
+        </svg>
       </div>
       <span class="auth-brand-name">Mandate Rescue</span>
     </div>
 
     <h1 class="auth-title">Create your account</h1>
-    <p class="auth-subtitle">Start recovering UPI Autopay failures today</p>
+    <p class="auth-subtitle">Start recovering UPI Autopay mandate failures today</p>
 
-    <div id="auth-banner" class="auth-banner hidden" role="alert"></div>
+    <div id="auth-banner" class="auth-banner hidden" role="alert" aria-live="polite"></div>
 
     <form id="register-form" novalidate autocomplete="on">
 
+      <!-- Personal information -->
       <div class="auth-section-label">Personal information</div>
       <div class="form-grid-2">
         <div class="form-field">
-          <label class="form-label" for="r-full-name">Full name <span class="req">*</span></label>
-          <input class="form-input" id="r-full-name" type="text" name="full_name" autocomplete="name" placeholder="Jane Smith" required>
-          <div class="field-error" id="err-full-name"></div>
+          <label class="form-label" for="r-full-name">
+            Full name <span class="req" aria-label="required">*</span>
+          </label>
+          <input class="form-input" id="r-full-name" type="text" name="full_name"
+                 autocomplete="name" placeholder="Jane Smith" required aria-required="true">
+          <div class="field-error" id="err-full-name" role="alert"></div>
         </div>
         <div class="form-field">
           <label class="form-label" for="r-phone">Phone number</label>
-          <input class="form-input" id="r-phone" type="tel" name="phone" autocomplete="tel" placeholder="+91 98765 43210">
+          <input class="form-input" id="r-phone" type="tel" name="phone"
+                 autocomplete="tel" placeholder="+91 98765 43210">
         </div>
         <div class="form-field">
-          <label class="form-label" for="r-email">Email address <span class="req">*</span></label>
-          <input class="form-input" id="r-email" type="email" name="email" autocomplete="email" placeholder="you@company.com" required>
-          <div class="field-error" id="err-email"></div>
+          <label class="form-label" for="r-email">
+            Email address <span class="req" aria-label="required">*</span>
+          </label>
+          <input class="form-input" id="r-email" type="email" name="email"
+                 autocomplete="email" placeholder="you@company.com" required aria-required="true">
+          <div class="field-error" id="err-email" role="alert"></div>
         </div>
         <div class="form-field">
           <label class="form-label" for="r-country">Country</label>
@@ -57,29 +69,37 @@
         </div>
         <div class="form-field form-col-2">
           <label class="form-label" for="r-addr1">Address</label>
-          <input class="form-input" id="r-addr1" type="text" name="address_line1" autocomplete="address-line1" placeholder="123 Main Street">
+          <input class="form-input" id="r-addr1" type="text" name="address_line1"
+                 autocomplete="address-line1" placeholder="123 Main Street">
         </div>
         <div class="form-field">
           <label class="form-label" for="r-city">City</label>
-          <input class="form-input" id="r-city" type="text" name="city" autocomplete="address-level2" placeholder="Mumbai">
+          <input class="form-input" id="r-city" type="text" name="city"
+                 autocomplete="address-level2" placeholder="Mumbai">
         </div>
         <div class="form-field">
           <label class="form-label" for="r-state">State</label>
-          <input class="form-input" id="r-state" type="text" name="state_region" autocomplete="address-level1" placeholder="Maharashtra">
+          <input class="form-input" id="r-state" type="text" name="state_region"
+                 autocomplete="address-level1" placeholder="Maharashtra">
         </div>
       </div>
 
+      <!-- Business information -->
       <div class="auth-section-label">Business information</div>
       <div class="form-grid-2">
         <div class="form-field">
-          <label class="form-label" for="r-biz-name">Business name <span class="req">*</span></label>
-          <input class="form-input" id="r-biz-name" type="text" name="business_name" autocomplete="organization" placeholder="Acme Payments Pvt Ltd" required>
-          <div class="field-error" id="err-business-name"></div>
+          <label class="form-label" for="r-biz-name">
+            Business name <span class="req" aria-label="required">*</span>
+          </label>
+          <input class="form-input" id="r-biz-name" type="text" name="business_name"
+                 autocomplete="organization" placeholder="Acme Payments Pvt Ltd"
+                 required aria-required="true">
+          <div class="field-error" id="err-business-name" role="alert"></div>
         </div>
         <div class="form-field">
           <label class="form-label" for="r-biz-type">Business type</label>
           <select class="form-select" id="r-biz-type" name="business_type">
-            <option value="">Select type</option>
+            <option value="">Select type&hellip;</option>
             <option value="fintech">Fintech</option>
             <option value="subscription">Subscription SaaS</option>
             <option value="ecommerce">E-commerce</option>
@@ -90,42 +110,64 @@
           </select>
         </div>
         <div class="form-field form-col-2">
-          <label class="form-label" for="r-website">Website (optional)</label>
-          <input class="form-input" id="r-website" type="url" name="business_website" autocomplete="url" placeholder="https://yourcompany.com">
+          <label class="form-label" for="r-website">Website <span class="auth-optional">(optional)</span></label>
+          <input class="form-input" id="r-website" type="url" name="business_website"
+                 autocomplete="url" placeholder="https://yourcompany.com">
         </div>
       </div>
 
+      <!-- Account security -->
       <div class="auth-section-label">Account security</div>
       <div class="form-grid-2">
         <div class="form-field">
-          <label class="form-label" for="r-password">Password <span class="req">*</span></label>
+          <label class="form-label" for="r-password">
+            Password <span class="req" aria-label="required">*</span>
+          </label>
           <div class="input-with-toggle">
-            <input class="form-input" id="r-password" type="password" name="password" autocomplete="new-password" placeholder="Min. 8 chars, 1 letter + 1 number" required>
-            <button type="button" class="toggle-pw" data-target="r-password" aria-label="Toggle">
-              <svg width="15" height="15" viewBox="0 0 16 16" fill="none"><ellipse cx="8" cy="8" rx="5.5" ry="3.5" stroke="currentColor" stroke-width="1.4"/><circle cx="8" cy="8" r="1.5" fill="currentColor"/></svg>
+            <input class="form-input" id="r-password" type="password" name="password"
+                   autocomplete="new-password"
+                   placeholder="Min. 8 chars, 1 letter + 1 number"
+                   required aria-required="true"
+                   aria-describedby="pw-strength">
+            <button type="button" class="toggle-pw" data-target="r-password"
+                    aria-label="Show or hide password" aria-pressed="false">
+              <svg width="15" height="15" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+                <ellipse cx="8" cy="8" rx="5.5" ry="3.5" stroke="currentColor" stroke-width="1.4"/>
+                <circle cx="8" cy="8" r="1.5" fill="currentColor"/>
+              </svg>
             </button>
           </div>
           <div class="pw-strength" id="pw-strength" aria-live="polite"></div>
-          <div class="field-error" id="err-password"></div>
+          <div class="field-error" id="err-password" role="alert"></div>
         </div>
         <div class="form-field">
-          <label class="form-label" for="r-confirm-pw">Confirm password <span class="req">*</span></label>
+          <label class="form-label" for="r-confirm-pw">
+            Confirm password <span class="req" aria-label="required">*</span>
+          </label>
           <div class="input-with-toggle">
-            <input class="form-input" id="r-confirm-pw" type="password" name="confirm_password" autocomplete="new-password" placeholder="Repeat password" required>
-            <button type="button" class="toggle-pw" data-target="r-confirm-pw" aria-label="Toggle">
-              <svg width="15" height="15" viewBox="0 0 16 16" fill="none"><ellipse cx="8" cy="8" rx="5.5" ry="3.5" stroke="currentColor" stroke-width="1.4"/><circle cx="8" cy="8" r="1.5" fill="currentColor"/></svg>
+            <input class="form-input" id="r-confirm-pw" type="password" name="confirm_password"
+                   autocomplete="new-password" placeholder="Repeat password"
+                   required aria-required="true">
+            <button type="button" class="toggle-pw" data-target="r-confirm-pw"
+                    aria-label="Show or hide password" aria-pressed="false">
+              <svg width="15" height="15" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+                <ellipse cx="8" cy="8" rx="5.5" ry="3.5" stroke="currentColor" stroke-width="1.4"/>
+                <circle cx="8" cy="8" r="1.5" fill="currentColor"/>
+              </svg>
             </button>
           </div>
-          <div class="field-error" id="err-confirm-pw"></div>
+          <div class="field-error" id="err-confirm-pw" role="alert"></div>
         </div>
       </div>
 
-      <div class="form-field" style="margin-top:4px">
+      <div class="form-field" style="margin-top:8px">
         <label class="checkbox-label">
-          <input type="checkbox" id="r-terms" name="terms_accepted" required>
-          <span>I agree to the <a href="#" class="link">Terms of Service</a> and <a href="#" class="link">Privacy Policy</a></span>
+          <input type="checkbox" id="r-terms" name="terms_accepted" required
+                 aria-required="true">
+          <span>I agree to the <a href="#" class="link">Terms of Service</a> and
+                <a href="#" class="link">Privacy Policy</a></span>
         </label>
-        <div class="field-error" id="err-terms"></div>
+        <div class="field-error" id="err-terms" role="alert"></div>
       </div>
 
       <button type="submit" class="btn btn-primary btn-auth" id="btn-register">
@@ -136,6 +178,7 @@
 
     <hr class="auth-divider">
     <p class="auth-footer-link">Already have an account? <a href="/">Sign in</a></p>
+
   </div>
 </div>
 
@@ -143,36 +186,47 @@
 <script>
 (function () {
   'use strict';
-  const form   = document.getElementById('register-form');
-  const banner = document.getElementById('auth-banner');
-  const btnEl  = document.getElementById('btn-register');
-  const pwEl   = document.getElementById('r-password');
+  const form       = document.getElementById('register-form');
+  const banner     = document.getElementById('auth-banner');
+  const btnEl      = document.getElementById('btn-register');
+  const pwEl       = document.getElementById('r-password');
   const strengthEl = document.getElementById('pw-strength');
 
+  /* ---- Password strength ---- */
   pwEl.addEventListener('input', () => {
     const v = pwEl.value;
-    let s = 0;
-    if (v.length >= 8)  s++;
-    if (v.length >= 12) s++;
-    if (/[A-Z]/.test(v)) s++;
-    if (/[0-9]/.test(v)) s++;
-    if (/[^A-Za-z0-9]/.test(v)) s++;
-    const labels = ['','Weak','Fair','Good','Strong','Very strong'];
-    const cls    = ['','pw-weak','pw-fair','pw-good','pw-strong','pw-vstrong'];
-    strengthEl.textContent = labels[s] || '';
-    strengthEl.className   = 'pw-strength ' + (cls[s] || '');
+    let score = 0;
+    if (v.length >= 8)          score++;
+    if (v.length >= 12)         score++;
+    if (/[A-Z]/.test(v))        score++;
+    if (/[0-9]/.test(v))        score++;
+    if (/[^A-Za-z0-9]/.test(v)) score++;
+    const labels = ['', 'Weak', 'Fair', 'Good', 'Strong', 'Very strong'];
+    const cls    = ['', 'pw-weak', 'pw-fair', 'pw-good', 'pw-strong', 'pw-vstrong'];
+    strengthEl.textContent = v.length ? (labels[score] || '') : '';
+    strengthEl.className   = 'pw-strength ' + (cls[score] || '');
   });
 
+  /* ---- Submit ---- */
   form.addEventListener('submit', async (e) => {
     e.preventDefault();
     clearBanner(banner);
-    ['err-full-name','err-email','err-business-name','err-password','err-confirm-pw','err-terms']
+    ['err-full-name', 'err-email', 'err-business-name',
+     'err-password', 'err-confirm-pw', 'err-terms']
       .forEach(id => { const el = document.getElementById(id); if (el) el.textContent = ''; });
 
     const pw  = document.getElementById('r-password').value;
     const cpw = document.getElementById('r-confirm-pw').value;
-    if (pw !== cpw) { document.getElementById('err-confirm-pw').textContent = 'Passwords do not match.'; return; }
-    if (!document.getElementById('r-terms').checked) { document.getElementById('err-terms').textContent = 'You must accept the terms.'; return; }
+
+    if (pw !== cpw) {
+      document.getElementById('err-confirm-pw').textContent = 'Passwords do not match.';
+      document.getElementById('r-confirm-pw').focus();
+      return;
+    }
+    if (!document.getElementById('r-terms').checked) {
+      document.getElementById('err-terms').textContent = 'You must accept the terms to continue.';
+      return;
+    }
 
     setLoading(btnEl, true);
     const payload = {
@@ -186,23 +240,28 @@
       business_name:    document.getElementById('r-biz-name').value.trim(),
       business_type:    document.getElementById('r-biz-type').value,
       business_website: document.getElementById('r-website').value.trim(),
-      password: pw, confirm_password: cpw, terms_accepted: true,
+      password:         pw,
+      confirm_password: cpw,
+      terms_accepted:   true,
     };
     try {
       const resp = await fetch('/api/auth/register', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify(payload),
       });
       const body = await resp.json();
       if (resp.status === 201 && body.ok) {
-        showBanner(banner, body.message, 'success');
-        setTimeout(() => { window.location.href = '/verify-email?email=' + encodeURIComponent(payload.email); }, 1000);
+        showBanner(banner, body.message || 'Account created — check your email for a verification code.', 'success');
+        setTimeout(() => {
+          window.location.href = '/verify-email?email=' + encodeURIComponent(payload.email);
+        }, 1000);
       } else {
-        showBanner(banner, body.message || 'Registration failed.', 'error');
+        showBanner(banner, body.message || 'Registration failed. Please check your details.', 'error');
         setLoading(btnEl, false);
       }
-    } catch (err) {
-      showBanner(banner, 'Network error. Please try again.', 'error');
+    } catch {
+      showBanner(banner, 'Network error — please check your connection and try again.', 'error');
       setLoading(btnEl, false);
     }
   });

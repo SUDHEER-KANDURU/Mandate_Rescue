@@ -1,0 +1,1019 @@
+/*
+ * dashboard.css
+ * =====================================================================
+ * Command Center layout — matches the reference screenshots exactly.
+ * Loaded AFTER style.css and reference-match.css.
+ *
+ * Reference layout:
+ *   1. Hero header  (Welcome back / big title / subtitle + date picker)
+ *   2. 4 KPI cards  (icon-left, horizontal, trend arrow + label)
+ *   3. 2-col row    (Trend chart 65% | AI Insights 35%)
+ *   4. 2-col row    (Recent Cases 65% | Recovery Funnel 35%)
+ *   5. Status bar
+ * =====================================================================
+ */
+
+/* ===================================================================
+   1. HERO HEADER
+   =================================================================== */
+.cc-hero {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 20px;
+  flex-wrap: wrap;
+}
+
+.cc-welcome {
+  font-size: 13px;
+  color: var(--text-tertiary);
+  margin-bottom: 2px;
+}
+
+.cc-hero-title {
+  font-size: 26px;
+  font-weight: 700;
+  color: var(--text-primary);
+  letter-spacing: -0.03em;
+  line-height: 1.15;
+  margin: 0 0 6px;
+}
+
+.cc-hero-sub {
+  font-size: 13px;
+  color: var(--text-tertiary);
+  line-height: 1.5;
+  margin: 0;
+  max-width: 520px;
+}
+
+.cc-hero-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+  padding-top: 4px;
+}
+
+.cc-date-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 32px;
+  padding: 0 12px;
+  border: 1px solid var(--border-default);
+  border-radius: 6px;
+  background: var(--bg-surface);
+  color: var(--text-primary);
+  font-size: 12.5px;
+  font-weight: 500;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: border-color 0.12s, background 0.12s;
+}
+
+.cc-date-btn:hover {
+  background: var(--bg-subtle);
+  border-color: var(--border-strong);
+}
+
+:root[data-theme="dark"] .cc-date-btn {
+  background: var(--bg-subtle);
+  border-color: var(--border-default);
+}
+
+
+/* ===================================================================
+   2. KPI ROW — 4 cards, icon on left
+   =================================================================== */
+.cc-kpi-row {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.cc-kpi-card {
+  background: var(--bg-surface);
+  border: 1px solid var(--border-default);
+  border-radius: 6px;
+  padding: 16px 18px;
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+  box-shadow: 0 1px 2px rgba(0,0,0,0.05);
+  transition: box-shadow 0.12s;
+}
+
+.cc-kpi-card:hover {
+  box-shadow: 0 2px 6px rgba(0,0,0,0.08);
+}
+
+/* Success variant — no border change, just icon color */
+.cc-kpi-card--success .cc-kpi-icon { color: var(--status-success-text); }
+.cc-kpi-card--success .cc-kpi-icon { background: var(--status-success-bg); }
+
+/* Icon container */
+.cc-kpi-icon {
+  width: 38px;
+  height: 38px;
+  border-radius: 8px;
+  background: var(--bg-subtle);
+  border: 1px solid var(--border-default);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  color: var(--text-secondary);
+}
+
+.cc-kpi-icon--risk     { background: var(--status-error-bg);   color: var(--status-error-text);   border-color: var(--status-error-border); }
+.cc-kpi-icon--expected { background: var(--status-info-bg);    color: var(--status-info-text);    border-color: var(--status-info-border); }
+.cc-kpi-icon--recovered{ background: var(--status-success-bg); color: var(--status-success-text); border-color: var(--status-success-border); }
+.cc-kpi-icon--rate     { background: var(--bg-subtle);         color: var(--text-secondary);      border-color: var(--border-default); font-weight:700; font-size:15px; }
+
+.cc-kpi-body {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.cc-kpi-label {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-tertiary);
+  line-height: 1.3;
+}
+
+.cc-kpi-info {
+  color: var(--text-tertiary);
+  opacity: 0.6;
+  flex-shrink: 0;
+  cursor: default;
+}
+
+.cc-kpi-value {
+  font-family: var(--font-mono);
+  font-size: 22px;
+  font-weight: 700;
+  color: var(--text-primary);
+  letter-spacing: -0.03em;
+  line-height: 1.15;
+  margin: 1px 0;
+}
+
+.cc-kpi-trend {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11.5px;
+  color: var(--text-tertiary);
+  line-height: 1.3;
+}
+
+.cc-kpi-trend--up {
+  color: var(--status-success-text);
+}
+
+.cc-kpi-trend--down {
+  color: var(--status-error-text);
+}
+
+/* Dark mode KPI cards */
+:root[data-theme="dark"] .cc-kpi-card {
+  background: var(--bg-surface);
+  border-color: var(--border-default);
+}
+
+:root[data-theme="dark"] .cc-kpi-icon--risk     { background: var(--status-error-bg);   border-color: var(--status-error-border); }
+:root[data-theme="dark"] .cc-kpi-icon--expected { background: var(--status-info-bg);    border-color: var(--status-info-border); }
+:root[data-theme="dark"] .cc-kpi-icon--recovered{ background: var(--status-success-bg); border-color: var(--status-success-border); }
+
+
+/* ===================================================================
+   3. MAIN 2-COLUMN ROW
+   =================================================================== */
+.cc-main-row {
+  display: grid;
+  grid-template-columns: 1fr 340px;
+  gap: 14px;
+  margin-bottom: 14px;
+  align-items: start;
+}
+
+
+/* ===================================================================
+   4. CARD BASE — used for all Command Center cards
+   =================================================================== */
+.cc-card {
+  background: var(--bg-surface);
+  border: 1px solid var(--border-default);
+  border-radius: 6px;
+  box-shadow: 0 1px 2px rgba(0,0,0,0.05);
+  overflow: hidden;
+}
+
+.cc-card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 18px 10px;
+  border-bottom: 1px solid var(--border-default);
+}
+
+.cc-card-head h2 {
+  font-size: 14px !important;
+  font-weight: 600 !important;
+  color: var(--text-primary) !important;
+  margin: 0;
+  display: flex;
+  align-items: center;
+}
+
+.cc-card-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.cc-view-all-btn {
+  background: none;
+  border: none;
+  padding: 0;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--blue-500);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: opacity 0.12s;
+}
+.cc-view-all-btn:hover { opacity: 0.75; }
+
+.cc-more-btn {
+  background: none;
+  border: none;
+  padding: 2px 6px;
+  font-size: 14px;
+  color: var(--text-tertiary);
+  cursor: pointer;
+  border-radius: 4px;
+  transition: background 0.1s;
+  letter-spacing: 1px;
+}
+.cc-more-btn:hover { background: var(--bg-subtle); }
+
+.cc-select {
+  height: 28px;
+  padding: 0 8px;
+  border: 1px solid var(--border-default);
+  border-radius: 5px;
+  font-size: 12px;
+  font-family: var(--font-sans);
+  background: var(--bg-surface);
+  color: var(--text-primary);
+  cursor: pointer;
+  outline: none;
+}
+
+.cc-select:focus { border-color: var(--blue-500); }
+
+:root[data-theme="dark"] .cc-card      { background: var(--bg-surface); border-color: var(--border-default); }
+:root[data-theme="dark"] .cc-card-head { border-bottom-color: var(--border-default); }
+:root[data-theme="dark"] .cc-select    { background: var(--bg-subtle); border-color: var(--border-default); }
+
+
+/* ===================================================================
+   5. TREND CHART CARD
+   =================================================================== */
+.cc-trend-card {
+  /* Inherits cc-card */
+}
+
+.cc-chart-wrap {
+  position: relative;
+  padding: 12px 14px 4px;
+  height: 220px;
+}
+
+.cc-chart-wrap canvas {
+  width: 100% !important;
+  height: 100% !important;
+}
+
+.cc-chart-loading {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--bg-surface);
+  z-index: 2;
+}
+
+.cc-chart-legend {
+  display: flex;
+  gap: 14px;
+  padding: 8px 16px 12px;
+  flex-wrap: wrap;
+}
+
+.cc-legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.cc-legend-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+
+/* ===================================================================
+   6. AI INSIGHTS CARD
+   =================================================================== */
+.cc-ai-card {
+  /* Inherits cc-card */
+}
+
+.cc-ai-list {
+  display: flex;
+  flex-direction: column;
+}
+
+.cc-ai-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 13px 18px;
+  border-bottom: 1px solid var(--border-default);
+  cursor: pointer;
+  transition: background 0.1s;
+}
+
+.cc-ai-item:last-child { border-bottom: none; }
+
+.cc-ai-item:hover { background: var(--bg-subtle); }
+
+.cc-ai-item-icon {
+  width: 30px;
+  height: 30px;
+  border-radius: 7px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.cc-ai-icon--up      { background: var(--status-success-bg); color: var(--status-success-text); }
+.cc-ai-icon--clock   { background: var(--status-info-bg);    color: var(--status-info-text); }
+.cc-ai-icon--warn    { background: var(--status-warning-bg); color: var(--status-warning-text); }
+.cc-ai-icon--channel { background: var(--status-success-bg); color: var(--status-success-text); }
+
+.cc-ai-item-body {
+  flex: 1;
+  min-width: 0;
+}
+
+.cc-ai-item-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+  line-height: 1.3;
+}
+
+.cc-ai-item-sub {
+  font-size: 11.5px;
+  color: var(--text-tertiary);
+  margin-top: 2px;
+  line-height: 1.3;
+}
+
+.cc-ai-item-arrow {
+  color: var(--text-tertiary);
+  flex-shrink: 0;
+}
+
+
+/* ===================================================================
+   7. RECENT CASES TABLE
+   =================================================================== */
+.cc-cases-card {
+  /* Inherits cc-card */
+}
+
+.cc-loading-row {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 32px;
+  color: var(--text-tertiary);
+}
+
+/* Cases table */
+.cc-cases-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12.5px;
+}
+
+.cc-cases-table th {
+  padding: 8px 12px;
+  text-align: left;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-tertiary);
+  border-bottom: 1px solid var(--border-default);
+  white-space: nowrap;
+  background: var(--bg-surface);
+}
+
+.cc-cases-table td {
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--border-default);
+  vertical-align: middle;
+}
+
+.cc-cases-table tbody tr:last-child td { border-bottom: none; }
+
+.cc-cases-table tbody tr {
+  cursor: pointer;
+  transition: background 0.1s;
+}
+
+.cc-cases-table tbody tr:hover td { background: var(--bg-subtle); }
+
+/* Avatar circle */
+.cc-avatar {
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  font-weight: 700;
+  flex-shrink: 0;
+  line-height: 1;
+}
+
+.cc-avatar--am { background: #DBEAFE; color: #1D4ED8; }
+.cc-avatar--ps { background: #FCE7F3; color: #9D174D; }
+.cc-avatar--ti { background: #D1FAE5; color: #065F46; }
+.cc-avatar--rv { background: #FEF3C7; color: #92400E; }
+.cc-avatar--gs { background: #EDE9FE; color: #5B21B6; }
+.cc-avatar--default { background: var(--bg-subtle); color: var(--text-secondary); }
+
+.cc-customer-cell {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+}
+
+.cc-customer-info { display: flex; flex-direction: column; gap: 1px; }
+.cc-customer-name { font-size: 13px; font-weight: 600; color: var(--text-primary); line-height: 1.3; }
+.cc-customer-email { font-size: 11px; color: var(--text-tertiary); line-height: 1.3; }
+
+/* Amount column */
+.cc-amount-cell {
+  font-family: var(--font-mono);
+  font-weight: 700;
+  font-size: 13px;
+  color: var(--text-primary);
+  white-space: nowrap;
+}
+
+/* Reason cell */
+.cc-reason-cell { font-size: 12px; color: var(--text-secondary); line-height: 1.35; }
+.cc-reason-main { font-weight: 500; color: var(--text-primary); }
+.cc-reason-sub  { color: var(--text-tertiary); font-size: 11px; margin-top: 1px; }
+
+/* AI Action chip */
+.cc-ai-action {
+  display: inline-flex;
+  align-items: center;
+  padding: 3px 8px;
+  background: var(--status-info-bg);
+  border: 1px solid var(--status-info-border);
+  border-radius: 4px;
+  font-size: 11.5px;
+  font-weight: 500;
+  color: var(--status-info-text);
+  white-space: nowrap;
+}
+
+/* Status badges in table */
+.cc-status {
+  display: inline-flex;
+  align-items: center;
+  padding: 3px 9px;
+  border-radius: 4px;
+  font-size: 11.5px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.cc-status--recovered  { background: #D1FAE5; color: #065F46; }
+.cc-status--in_progress{ background: #DBEAFE; color: #1E40AF; }
+.cc-status--failed     { background: #FEE2E2; color: #991B1B; }
+.cc-status--contacted  { background: #E0F2FE; color: #0369A1; }
+.cc-status--open       { background: var(--bg-subtle); color: var(--text-secondary); }
+.cc-status--escalated  { background: #F5F3FF; color: #5B21B6; }
+
+:root[data-theme="dark"] .cc-status--recovered  { background: #052E16; color: #34D399; }
+:root[data-theme="dark"] .cc-status--in_progress{ background: #1E2740; color: #60A5FA; }
+:root[data-theme="dark"] .cc-status--failed     { background: #2D0B0B; color: #F87171; }
+:root[data-theme="dark"] .cc-status--contacted  { background: #0C2B3A; color: #7DD3FC; }
+:root[data-theme="dark"] .cc-status--escalated  { background: #2D1B4E; color: #C4B5FD; }
+
+/* Time column */
+.cc-time-cell {
+  font-size: 11.5px;
+  color: var(--text-tertiary);
+  white-space: nowrap;
+}
+
+.cc-row-arrow {
+  color: var(--text-tertiary);
+}
+
+:root[data-theme="dark"] .cc-cases-table th { background: var(--bg-surface); }
+:root[data-theme="dark"] .cc-avatar--am { background: #1E2740; color: #60A5FA; }
+:root[data-theme="dark"] .cc-avatar--ps { background: #3B0A23; color: #F9A8D4; }
+:root[data-theme="dark"] .cc-avatar--ti { background: #052E16; color: #34D399; }
+:root[data-theme="dark"] .cc-avatar--rv { background: #2D1B00; color: #FCD34D; }
+:root[data-theme="dark"] .cc-avatar--gs { background: #2D1B4E; color: #C4B5FD; }
+
+
+/* ===================================================================
+   8. RECOVERY FUNNEL SIDEBAR
+   =================================================================== */
+.cc-sidebar-card {
+  /* Inherits cc-card */
+}
+
+.cc-funnel-list {
+  display: flex;
+  flex-direction: column;
+  padding: 6px 0;
+}
+
+.cc-funnel-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 18px;
+  transition: background 0.1s;
+  cursor: default;
+}
+
+.cc-funnel-item:hover { background: var(--bg-subtle); }
+
+.cc-funnel-icon {
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.cc-fi--failed    { background: var(--status-error-bg);   color: var(--status-error-text); }
+.cc-fi--analyzed  { background: var(--status-info-bg);    color: var(--status-info-text); }
+.cc-fi--actions   { background: var(--status-warning-bg); color: var(--status-warning-text); }
+.cc-fi--recovered { background: var(--status-success-bg); color: var(--status-success-text); }
+
+.cc-funnel-item-body { flex: 1; min-width: 0; }
+
+.cc-funnel-item-label {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+  line-height: 1.3;
+}
+
+.cc-funnel-item-count {
+  font-family: var(--font-mono);
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text-primary);
+  flex-shrink: 0;
+}
+
+.cc-funnel-item-pct {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-tertiary);
+  flex-shrink: 0;
+  min-width: 38px;
+  text-align: right;
+}
+
+/* Arrow between funnel stages */
+.cc-funnel-arrow {
+  display: flex;
+  align-items: center;
+  padding: 2px 18px 2px 62px;
+  color: var(--text-tertiary);
+  font-size: 14px;
+}
+
+:root[data-theme="dark"] .cc-fi--failed    { background: var(--status-error-bg); }
+:root[data-theme="dark"] .cc-fi--analyzed  { background: var(--status-info-bg); }
+:root[data-theme="dark"] .cc-fi--actions   { background: var(--status-warning-bg); }
+:root[data-theme="dark"] .cc-fi--recovered { background: var(--status-success-bg); }
+
+/* cc-chart-empty used by existing chart code */
+.cc-chart-empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  text-align: center;
+  font-size: 12px;
+  color: var(--text-tertiary);
+  min-height: 80px;
+}
+
+
+/* ===================================================================
+   9. SYSTEM STATUS BAR
+   =================================================================== */
+.cc-status-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 16px;
+  background: var(--bg-surface);
+  border: 1px solid var(--border-default);
+  border-radius: 6px;
+  margin-top: 6px;
+  font-size: 12.5px;
+}
+
+.cc-status-left {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--text-primary);
+  font-weight: 500;
+}
+
+.cc-status-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--status-success-text);
+  flex-shrink: 0;
+  box-shadow: 0 0 0 2px rgba(16,185,129,0.2);
+}
+
+.cc-status-text { font-size: 13px; font-weight: 600; color: var(--status-success-text); }
+
+.cc-status-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--text-tertiary);
+  font-size: 12px;
+}
+
+.cc-refresh-btn {
+  background: none;
+  border: none;
+  padding: 4px;
+  cursor: pointer;
+  color: var(--text-tertiary);
+  border-radius: 4px;
+  display: flex;
+  align-items: center;
+  transition: background 0.1s, color 0.1s;
+}
+
+.cc-refresh-btn:hover { background: var(--bg-subtle); color: var(--text-primary); }
+
+:root[data-theme="dark"] .cc-status-bar { background: var(--bg-surface); border-color: var(--border-default); }
+
+
+/* ===================================================================
+   10. SIDEBAR — match reference exactly
+   (reference shows: icon + label, ~148px wide, no section labels for most,
+    compact spacing, active = left blue border + blue text)
+   =================================================================== */
+
+/* Override the earlier sidebar-width to match reference more closely */
+:root { --sidebar-width: 196px; }
+
+.sidebar {
+  width: var(--sidebar-width);
+}
+
+/* Logo area — name only, no icon */
+.sidebar-logo {
+  padding: 16px 16px 14px;
+  border-bottom: 1px solid var(--sidebar-border);
+  display: flex;
+  align-items: center;
+  min-height: 52px;
+}
+
+.sidebar-logo-text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.sidebar-logo-name {
+  font-size: 15px !important;
+  font-weight: 700 !important;
+  color: var(--text-primary) !important;
+  letter-spacing: -0.02em;
+  white-space: nowrap;
+  overflow: visible;
+  text-overflow: clip;
+  line-height: 1.2;
+}
+
+/* Hide the logo mark everywhere (removed from HTML, but guard CSS too) */
+.sidebar-logo-mark { display: none !important; }
+
+/* Hide tagline (removed from HTML, guard) */
+.sidebar-logo-tagline { display: none !important; }
+
+/* Nav label: slightly smaller to fit 148px */
+.nav-label { font-size: 12px; }
+
+/* Nav item spacing */
+.nav-item {
+  padding: 6px 9px;
+  font-size: 12px;
+  gap: 8px;
+}
+
+.nav-ico {
+  width: 15px;
+  height: 15px;
+}
+
+/* Section labels — reference shows "MAIN", "TOOLS", "RECOVERY OS" */
+.nav-section-label {
+  font-size: 9.5px;
+  letter-spacing: 0.09em;
+  padding: 0 7px 3px;
+  opacity: 0.65;
+}
+
+/* Active item: blue left border, blue text, very light blue bg */
+.nav-item.active {
+  background: rgba(37,99,235,0.08);
+  color: var(--blue-500);
+  border-left: 2px solid var(--blue-500);
+  border-radius: 0 4px 4px 0;
+  font-weight: 600;
+}
+
+:root[data-theme="dark"] .nav-item.active {
+  background: rgba(59,130,246,0.12);
+  color: var(--blue-500);
+}
+
+/* Sidebar status block */
+.sidebar-status {
+  display: flex;
+  align-items: flex-start;
+  gap: 7px;
+  padding: 10px 10px 10px;
+  margin: 4px 0 0;
+  border-top: 1px solid var(--sidebar-border);
+}
+
+.sidebar-status-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--status-success-text);
+  flex-shrink: 0;
+  margin-top: 3px;
+}
+
+.sidebar-status-text {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-primary);
+  line-height: 1.2;
+}
+
+.sidebar-status-sub {
+  font-size: 10.5px;
+  color: var(--text-tertiary);
+  display: block;
+  margin-top: 1px;
+  line-height: 1.2;
+}
+
+
+/* ===================================================================
+   11. TOPBAR — dark in BOTH light and dark modes, always
+   =================================================================== */
+
+/* Hard-code the topbar to always be dark — overrides everything */
+header.topbar,
+.topbar {
+  background: #1A1D24 !important;
+  border-bottom: 1px solid #282D38 !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+
+/* Topbar text — always light on the dark bar */
+.topbar, .topbar * { color: #D1D5DB; }
+.topbar .btn-primary { color: #fff !important; }
+#btn-export,
+#btn-export:visited { color: #D1D5DB !important; text-decoration: none; }
+#btn-export:hover { text-decoration: none; background: #282D38 !important; }
+
+.page-breadcrumb,
+#header-page-title {
+  color: #F3F4F6 !important;
+  font-size: 13px !important;
+  font-weight: 600 !important;
+}
+
+/* Search bar */
+.header-search-input {
+  background: #252A35 !important;
+  border-color: #363D4A !important;
+  color: #E5E7EB !important;
+}
+.header-search-input::placeholder { color: #6B7280 !important; }
+.header-search-wrap .search-icon { color: #6B7280 !important; }
+
+/* Ghost buttons in topbar */
+.topbar .btn-ghost {
+  background: #252A35 !important;
+  border-color: #363D4A !important;
+  color: #D1D5DB !important;
+}
+.topbar .btn-ghost:hover { background: #363D4A !important; }
+
+/* Env badge — amber dot + label */
+.env-badge {
+  background: rgba(251,191,36,0.12) !important;
+  color: #FCD34D !important;
+  border: 1px solid rgba(251,191,36,0.28) !important;
+  font-size: 11px !important;
+  font-weight: 600 !important;
+}
+.env-dot {
+  background: #FCD34D !important;
+  box-shadow: 0 0 0 2px rgba(252,211,77,0.2);
+}
+
+/* Bell + icon buttons in topbar */
+.topbar .btn-icon,
+.topbar .btn-icon svg { color: #D1D5DB !important; }
+
+/* Avatar */
+.profile-avatar-btn {
+  background: #4F46E5 !important;
+  color: #fff !important;
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  font-size: 12px;
+  font-weight: 700;
+  flex-shrink: 0;
+}
+
+
+/* ===================================================================
+   12. CONTENT PADDING
+   =================================================================== */
+.content {
+  margin-left: var(--sidebar-width);
+  padding: 20px 24px;
+}
+
+
+/* ===================================================================
+   13. RESPONSIVE
+   =================================================================== */
+@media (max-width: 1280px) {
+  .cc-main-row { grid-template-columns: 1fr 300px; }
+}
+
+@media (max-width: 1100px) {
+  .cc-main-row { grid-template-columns: 1fr; }
+  .cc-kpi-row  { grid-template-columns: repeat(2, 1fr); }
+}
+
+@media (max-width: 860px) {
+  :root { --sidebar-width: 52px !important; }
+  .nav-label    { display: none !important; }
+  .sidebar-logo-text { display: none !important; }
+  .nav-section-label { display: none !important; }
+  .nav-item     { justify-content: center; padding: 8px 0; }
+  .sidebar-logo { justify-content: center; padding: 12px 6px; min-height: 48px; }
+  .sidebar-status { display: none !important; }
+}
+
+@media (max-width: 600px) {
+  .cc-kpi-row { grid-template-columns: 1fr 1fr; gap: 8px; }
+  .cc-hero-title { font-size: 20px; }
+  .content { padding: 12px 14px; }
+}
+
+
+/* ===================================================================
+   FIX: > arrow symbols appearing on view-content panels
+   The cause: .page-header flex layout + SVG arrows in btn-ghost buttons
+   inside view-content panels render before CSS is fully applied.
+   Solution: ensure SVG arrows in buttons within page-header are always
+   treated as inline SVG, never as text.
+   =================================================================== */
+
+/* Prevent the topbar color rule from bleeding into content */
+.view-content, .view, .content { color: var(--text-primary); }
+.view-content *, .view *, .content * { color: inherit; }
+
+/* Override the blanket topbar colour rule to only apply inside topbar */
+.topbar .btn,
+.topbar button,
+.topbar a,
+.topbar span,
+.topbar svg { color: #D1D5DB; }
+
+/* Ensure SVG in non-topbar buttons uses proper colour */
+.view-content .btn svg,
+.view-content button svg,
+.section-card .btn svg,
+.page-header .btn svg {
+  color: var(--text-secondary) !important;
+}
+
+/* Ensure SVG paths never render as text nodes */
+svg { overflow: hidden; }
+svg path, svg circle, svg rect, svg line { color: inherit; }
+
+/* Remove the stray > that can appear from page-header button SVGs */
+.page-header .btn svg { display: inline-block; vertical-align: middle; }
+
+/* Fix page-header so flex children don't produce bare > separators */
+.view-content .page-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+/* Ensure filter-row in recovery-cases doesn't overflow and add stray chars */
+.filter-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+/* ===================================================================
+   FIX: Light mode topbar — extra specificity to prevent overrides
+   =================================================================== */
+
+/* Ensure the topbar never becomes transparent or white in light mode */
+body:not([data-theme="dark"]) header.topbar,
+body:not([data-theme="dark"]) .topbar {
+  background: #1A1D24 !important;
+}
+
+/* Auth pages should NOT have the dark topbar rule affect them */
+.auth-body .topbar { display: none; }
+
+/* ===================================================================
+   DEFINITIVE FIX: hide stray < > chevron arrows on every panel
+   These decorative row-arrow / insight-arrow chevrons were showing
+   up as bare "<" / ">" glyphs. Hide them everywhere — they are
+   purely decorative and add no information.
+   =================================================================== */
+.cc-ai-item-arrow,
+.cc-row-arrow,
+.cc-row-arrow svg {
+  display: none !important;
+}
+
+/* The AI insight rows + case rows should fill the freed space cleanly */
+.cc-ai-item { gap: 12px; }
+.cc-ai-item-body { flex: 1; }

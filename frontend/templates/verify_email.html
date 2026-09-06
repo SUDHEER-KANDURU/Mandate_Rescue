@@ -1,20 +1,22 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Verify Email — Mandate Rescue</title>
+  <title>Verify Email â€” Mandate Rescue</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='auth.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='reference-match.css') }}">
 </head>
 <body class="auth-body">
 
 <div class="auth-wrap">
   <div class="auth-card">
 
+    <!-- Brand -->
     <div class="auth-brand">
       <div class="auth-logo-mark" aria-hidden="true">
         <svg viewBox="0 0 20 20" xmlns="http://www.w3.org/2000/svg">
@@ -24,31 +26,36 @@
       <span class="auth-brand-name">Mandate Rescue</span>
     </div>
 
+    <!-- Email icon -->
     <div class="verify-icon" aria-hidden="true">
       <svg width="48" height="48" viewBox="0 0 48 48" fill="none" xmlns="http://www.w3.org/2000/svg">
-        <circle cx="24" cy="24" r="22" stroke="#6366f1" stroke-width="2"/>
-        <path d="M12 24l8 8 16-16" stroke="#6366f1" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+        <circle cx="24" cy="24" r="22" stroke="#6366f1" stroke-width="2" opacity="0.3"/>
+        <circle cx="24" cy="24" r="18" stroke="#6366f1" stroke-width="1.5" opacity="0.15"/>
+        <path d="M14 17h20a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H14a2 2 0 0 1-2-2V19a2 2 0 0 1 2-2z"
+              stroke="#6366f1" stroke-width="1.75" stroke-linejoin="round"/>
+        <path d="M12 19l12 9 12-9" stroke="#6366f1" stroke-width="1.75"
+              stroke-linecap="round" stroke-linejoin="round"/>
       </svg>
     </div>
 
     <h1 class="auth-title">Check your inbox</h1>
-    <p class="auth-subtitle" id="verify-subtitle">
+    <p class="auth-subtitle">
       We sent a 6-digit code to <strong id="verify-email-display">your email</strong>.
       Enter it below to activate your account.
     </p>
 
-    <div id="auth-banner" class="auth-banner hidden" role="alert"></div>
+    <div id="auth-banner" class="auth-banner hidden" role="alert" aria-live="polite"></div>
 
     <form id="verify-form" novalidate>
       <div class="form-field">
         <label class="form-label" for="otp-input">Verification code</label>
         <input class="form-input otp-input" id="otp-input" type="text"
                inputmode="numeric" pattern="[0-9]{6}" maxlength="6"
-               autocomplete="one-time-code"
-               placeholder="000000" required
-               aria-describedby="otp-hint">
-        <div class="field-hint" id="otp-hint">6-digit code · expires in 10 minutes</div>
-        <div class="field-error" id="err-otp"></div>
+               autocomplete="one-time-code" placeholder="000000" required
+               aria-required="true" aria-describedby="otp-hint"
+               autofocus>
+        <div class="field-hint" id="otp-hint">6-digit code &middot; expires in 10&nbsp;minutes</div>
+        <div class="field-error" id="err-otp" role="alert"></div>
       </div>
 
       <button type="submit" class="btn btn-primary btn-auth" id="btn-verify">
@@ -58,13 +65,13 @@
     </form>
 
     <div class="resend-row">
-      Didn't receive the code?
+      Didn&rsquo;t get the code?
       <button id="btn-resend" class="link-btn" type="button">Resend code</button>
-      <span id="resend-cooldown" class="cooldown-text hidden"></span>
+      <span id="resend-cooldown" class="cooldown-text hidden" aria-live="polite"></span>
     </div>
 
-    <p class="auth-footer-link">
-      <a href="/">← Back to login</a>
+    <p class="auth-footer-link" style="margin-top:12px">
+      <a href="/">â† Back to sign in</a>
     </p>
 
   </div>
@@ -74,23 +81,32 @@
 <script>
 (function() {
   'use strict';
-  const params  = new URLSearchParams(window.location.search);
-  const email   = params.get('email') || '';
-  const banner  = document.getElementById('auth-banner');
-  const otpEl   = document.getElementById('otp-input');
-  const btnEl   = document.getElementById('btn-verify');
-  const resendBtn = document.getElementById('btn-resend');
+  const params     = new URLSearchParams(window.location.search);
+  const email      = params.get('email') || '';
+  const banner     = document.getElementById('auth-banner');
+  const otpEl      = document.getElementById('otp-input');
+  const btnEl      = document.getElementById('btn-verify');
+  const resendBtn  = document.getElementById('btn-resend');
   const cooldownEl = document.getElementById('resend-cooldown');
 
   if (email) {
     document.getElementById('verify-email-display').textContent = email;
   }
 
-  // Auto-format OTP input: digits only
+  /* ---- Auto-format: digits only, no spaces ---- */
   otpEl.addEventListener('input', () => {
     otpEl.value = otpEl.value.replace(/\D/g, '').slice(0, 6);
   });
+  /* Auto-submit when 6 digits entered */
+  otpEl.addEventListener('input', () => {
+    if (otpEl.value.length === 6) {
+      document.getElementById('verify-form').requestSubmit
+        ? document.getElementById('verify-form').requestSubmit()
+        : document.getElementById('btn-verify').click();
+    }
+  });
 
+  /* ---- Verify ---- */
   document.getElementById('verify-form').addEventListener('submit', async (e) => {
     e.preventDefault();
     clearBanner(banner);
@@ -98,60 +114,63 @@
     const otp = otpEl.value.trim();
     if (otp.length !== 6) {
       document.getElementById('err-otp').textContent = 'Please enter the 6-digit code.';
+      otpEl.focus();
       return;
     }
     setLoading(btnEl, true);
     try {
       const resp = await fetch('/api/auth/verify-email', {
-        method: 'POST',
+        method:  'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, otp }),
+        body:    JSON.stringify({ email, otp }),
       });
       const body = await resp.json();
       if (resp.ok && body.ok) {
-        showBanner(banner, 'Email verified! Redirecting to login…', 'success');
+        showBanner(banner, 'Email verified â€” signing you inâ€¦', 'success');
         setTimeout(() => { window.location.href = '/'; }, 1200);
       } else {
         const code = body.error || '';
         if (code === 'expired') {
-          showBanner(banner, body.message, 'warning');
+          showBanner(banner, body.message || 'Code expired. Request a new one.', 'warning');
         } else if (code === 'too_many_attempts') {
-          showBanner(banner, body.message, 'error');
+          showBanner(banner, body.message || 'Too many attempts. Request a new code.', 'error');
           btnEl.disabled = true;
         } else {
-          document.getElementById('err-otp').textContent = body.message || 'Invalid code.';
+          document.getElementById('err-otp').textContent = body.message || 'Invalid code â€” check and try again.';
         }
+        otpEl.value = '';
+        otpEl.focus();
         setLoading(btnEl, false);
       }
-    } catch (err) {
-      showBanner(banner, 'Network error. Please try again.', 'error');
+    } catch {
+      showBanner(banner, 'Network error â€” please check your connection and try again.', 'error');
       setLoading(btnEl, false);
     }
   });
 
-  // Resend
+  /* ---- Resend ---- */
   resendBtn.addEventListener('click', async () => {
     if (!email) return;
     resendBtn.disabled = true;
     clearBanner(banner);
     try {
       const resp = await fetch('/api/auth/resend-otp', {
-        method: 'POST',
+        method:  'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email }),
+        body:    JSON.stringify({ email }),
       });
       const body = await resp.json();
       if (body.ok) {
         showBanner(banner, 'A new code has been sent to your email.', 'success');
         startResendCooldown(60);
       } else if (body.error === 'cooldown') {
-        showBanner(banner, body.message, 'warning');
+        showBanner(banner, body.message || 'Please wait before requesting another code.', 'warning');
         startResendCooldown(60);
       } else {
-        showBanner(banner, body.message || 'Could not resend.', 'error');
+        showBanner(banner, body.message || 'Could not resend the code.', 'error');
         resendBtn.disabled = false;
       }
-    } catch (err) {
+    } catch {
       showBanner(banner, 'Network error.', 'error');
       resendBtn.disabled = false;
     }
